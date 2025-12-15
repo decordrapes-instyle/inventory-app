@@ -1,10 +1,11 @@
+// src/pages/AutoInventory.tsx
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { ref, push, set, get, update } from 'firebase/database';
+import { ref, push, set, get, update, onValue, off } from 'firebase/database';
 import { database } from '../config/firebase';
 import { 
   Search, Package, History, 
-  TrendingUp, TrendingDown, ArrowLeft, Plus, Image as ImageIcon
+  TrendingUp, TrendingDown, ArrowLeft
 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 
@@ -36,7 +37,7 @@ interface Transaction {
   performedBy?: string;
 }
 
-const InventoryPage: React.FC = () => {
+const AutoInventoryPage: React.FC = () => {
   const { user } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -49,34 +50,36 @@ const InventoryPage: React.FC = () => {
   const [adjustNote, setAdjustNote] = useState('');
   const [adjustType, setAdjustType] = useState<'add' | 'reduce'>('add');
 
-  // Fetch products from Firebase
   useEffect(() => {
-    const fetchProducts = async () => {
-      setLoading(true);
-      try {
-        const productsRef = ref(database, 'quotations/manualInventory');
-        const snapshot = await get(productsRef);
-        
-        if (snapshot.exists()) {
-          const data = snapshot.val();
-          const productsList = Object.entries(data).map(([key, value]: any) => ({
-            id: key,
-            ...value,
-          }));
-          setProducts(productsList);
-        } else {
-          setProducts([]);
-        }
-      } catch (err: any) {
-        console.error('Error loading products:', err);
-        toast.error('Failed to load inventory');
-        setProducts([]);
-      } finally {
-        setLoading(false);
-      }
-    };
+    setLoading(true);
+    const productsRef = ref(database, 'quotations/inventory');
 
-    fetchProducts();
+    const listener = onValue(productsRef, (snapshot) => {
+        if (snapshot.exists()) {
+            const data = snapshot.val();
+            const productList: Product[] = Object.entries(data).map(([key, value]: any) => ({
+                id: key,
+                productId: value.productId || '',
+                productName: value.productName || 'Unnamed Product',
+                stock: value.stock || 0,
+                unit: value.unit || 'pcs',
+                createdAt: value.createdAt || 0,
+                updatedAt: value.updatedAt || 0,
+            })).sort((a, b) => b.updatedAt - a.updatedAt);
+            setProducts(productList);
+        } else {
+            setProducts([]);
+        }
+        setLoading(false);
+    }, (error) => {
+        console.error("Firebase error:", error);
+        toast.error("Failed to load products in real-time.");
+        setLoading(false);
+    });
+
+    return () => {
+        off(productsRef, 'value', listener);
+    };
   }, []);
 
   useEffect(() => {
@@ -109,7 +112,7 @@ const InventoryPage: React.FC = () => {
         quantityChange = -quantityChange;
       }
 
-      const productRef = ref(database, `quotations/manualInventory/${selectedProduct.id}`);
+      const productRef = ref(database, `quotations/inventory/${selectedProduct.id}`);
       const snapshot = await get(productRef);
       const currentProduct = snapshot.val();
       
@@ -150,18 +153,6 @@ const InventoryPage: React.FC = () => {
       });
 
       toast.success(`Stock ${quantityChange > 0 ? 'added' : 'removed'} successfully`);
-      
-      // Refresh the products list
-      const productsRef = ref(database, 'quotations/manualInventory');
-      const refreshSnapshot = await get(productsRef);
-      if (refreshSnapshot.exists()) {
-        const data = refreshSnapshot.val();
-        const productsList = Object.entries(data).map(([key, value]: any) => ({
-          id: key,
-          ...value,
-        }));
-        setProducts(productsList);
-      }
       
       setShowAdjustModal(false);
       setAdjustQuantity('');
@@ -214,7 +205,7 @@ const InventoryPage: React.FC = () => {
       <div className="min-h-screen bg-gray-50 dark:bg-black flex items-center justify-center p-4">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-gray-200 dark:border-gray-800 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600 dark:text-gray-400">Loading inventory...</p>
+          <p className="text-gray-600 dark:text-gray-400">Loading auto inventory...</p>
         </div>
       </div>
     );
@@ -249,7 +240,7 @@ const InventoryPage: React.FC = () => {
           {filteredProducts.length === 0 ? (
             <div className="w-full text-center py-12">
               <Package className="w-16 h-16 text-gray-300 dark:text-gray-700 mx-auto mb-4" />
-              <p className="text-gray-500 dark:text-gray-400">{searchTerm ? 'No products found' : 'No products in inventory'}</p>
+              <p className="text-gray-500 dark:text-gray-400">{searchTerm ? 'No products found' : 'No products in auto inventory'}</p>
               {searchTerm && (
                 <button
                   onClick={() => setSearchTerm('')}
@@ -267,19 +258,6 @@ const InventoryPage: React.FC = () => {
                   onClick={() => handleViewHistory(product)}
                   className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden shadow-sm hover:shadow-lg hover:border-blue-500 dark:hover:border-blue-600 transition-all duration-300 flex flex-col cursor-pointer"
                 >
-                  <div className="h-32 bg-gray-100 dark:bg-gray-800 relative overflow-hidden">
-                    {product.imageUrl ? (
-                      <img 
-                        src={product.imageUrl} 
-                        alt={product.productName}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <ImageIcon className="w-10 h-10 text-gray-300 dark:text-gray-700" />
-                      </div>
-                    )}
-                  </div>
                   <div className="p-4 flex flex-col flex-grow">
                     <h3 className="font-bold text-gray-900 dark:text-white truncate flex-grow">{product.productName}</h3>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">ID: {product.productId}</p>
@@ -325,14 +303,6 @@ const InventoryPage: React.FC = () => {
           )}
         </div>
 
-        {/* FAB to Add Product */}
-        <button
-          onClick={() => toast('Coming soon!')}
-          className="fixed bottom-20 md:bottom-6 right-6 bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-white rounded-full p-4 shadow-lg transition-transform hover:scale-110"
-        >
-          <Plus className="w-6 h-6" />
-        </button>
-
         {/* Adjust Stock Modal - Mobile Style */}
         {showAdjustModal && selectedProduct && (
           <div className="fixed inset-0 bg-black/50 flex items-end md:items-center justify-center z-50" onClick={() => setShowAdjustModal(false)}>
@@ -357,19 +327,6 @@ const InventoryPage: React.FC = () => {
                 {/* Product Info */}
                 <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
                   <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden flex-shrink-0">
-                      {selectedProduct.imageUrl ? (
-                        <img 
-                          src={selectedProduct.imageUrl} 
-                          alt={selectedProduct.productName}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Package className="w-8 h-8 text-gray-400" />
-                        </div>
-                      )}
-                    </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-gray-900 dark:text-white truncate">{selectedProduct.productName}</h3>
                       <p className="text-sm text-gray-500 dark:text-gray-400">ID: {selectedProduct.productId}</p>
@@ -516,7 +473,6 @@ const InventoryPage: React.FC = () => {
                             <div>
                               <span className="font-bold text-lg text-gray-900 dark:text-white">
                                 {`${transaction.quantityChange > 0 ? '+' : ''}${Number(transaction.quantityChange).toFixed(2)} ${transaction.unit}`}
-
                               </span>
                               <p className="text-sm text-gray-500 dark:text-gray-400 capitalize">Via {transaction.source}</p>
                             </div>
@@ -560,4 +516,4 @@ const InventoryPage: React.FC = () => {
   );
 };
 
-export default InventoryPage;
+export default AutoInventoryPage;

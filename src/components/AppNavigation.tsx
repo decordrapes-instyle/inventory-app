@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
@@ -6,41 +6,13 @@ import {
   User,
   Bell,
   Home,
-  Moon,
-  Sun,
 } from 'lucide-react';
 
 const AppNavigation: React.FC = () => {
   const { userProfile } = useAuth();
   const navigate = useNavigate();
 
-  const [darkMode, setDarkMode] = useState(false);
   const [notifications] = useState(0);
-
-  useEffect(() => {
-    // Check for saved theme or system preference
-    const savedTheme = localStorage.getItem('theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    
-    if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
-      setDarkMode(true);
-      document.documentElement.classList.add('dark');
-    }
-  }, []);
-
-  const toggleDarkMode = () => {
-    const newMode = !darkMode;
-    setDarkMode(newMode);
-    
-    if (newMode) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
-    }
-  };
-
 
   const NavItem = ({ to, children, icon: Icon }: { to: string; children: React.ReactNode; icon: React.ElementType }) => (
     <NavLink
@@ -72,18 +44,6 @@ const AppNavigation: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-4">
-              <button
-                onClick={toggleDarkMode}
-                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-900"
-                aria-label="Toggle theme"
-              >
-                {darkMode ? (
-                  <Sun className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                ) : (
-                  <Moon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                )}
-              </button>
-
               <button
                 onClick={() => navigate('/notifications')}
                 className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-900 relative"
@@ -119,6 +79,10 @@ const AppNavigation: React.FC = () => {
             Home
           </NavItem>
           
+          <NavItem to="/auto-inventory" icon={Package}>
+            Inventory
+          </NavItem>
+
           <NavItem to="/notifications" icon={Bell}>
             Alerts
             {notifications > 0 && (
@@ -129,18 +93,6 @@ const AppNavigation: React.FC = () => {
           <NavItem to="/profile" icon={User}>
             Profile
           </NavItem>
-          
-          <button
-            onClick={toggleDarkMode}
-            className="flex flex-col items-center justify-center py-3 text-gray-600 dark:text-gray-400 hover:text-blue-500 dark:hover:text-blue-400"
-          >
-            {darkMode ? (
-              <Sun className="w-6 h-6 mb-1" />
-            ) : (
-              <Moon className="w-6 h-6 mb-1" />
-            )}
-            <span className="text-xs font-medium">Theme</span>
-          </button>
         </div>
       </div>
     </>

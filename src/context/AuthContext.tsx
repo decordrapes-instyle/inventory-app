@@ -11,6 +11,16 @@ import {
 import { auth, database } from '../config/firebase';
 import { ref, set, get, child } from 'firebase/database';
 
+// Helper function to get from local storage
+const getLocalStorage = (key: string) => {
+  const storedValue = localStorage.getItem(key);
+  return storedValue ? JSON.parse(storedValue) : null;
+};
+
+// Helper function to set in local storage
+const setLocalStorage = (key: string, value: any) => {
+  localStorage.setItem(key, JSON.stringify(value));
+};
 interface UserProfile {
   uid: string;
   email: string;
@@ -24,11 +34,13 @@ interface AuthContextType {
   user: User | null;
   userProfile: UserProfile | null;
   loading: boolean;
+  darkMode: string;
   signup: (email: string, password: string, displayName: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (data: Partial<UserProfile>) => Promise<void>;
+  updateDarkMode: (mode: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -37,6 +49,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [darkMode, setDarkMode] = useState(getLocalStorage('darkmode') || 'light');
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
@@ -146,8 +159,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const updateDarkMode = (mode: string) => {
+    setDarkMode(mode);
+    setLocalStorage('darkmode', mode);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, userProfile, loading, signup, login, loginWithGoogle, logout, updateProfile }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        userProfile,
+        loading,
+        darkMode,
+        signup,
+        login,
+        loginWithGoogle,
+        logout,
+        updateProfile,
+        updateDarkMode,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
