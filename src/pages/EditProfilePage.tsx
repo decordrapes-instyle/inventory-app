@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, User, Camera } from 'lucide-react';
+import { ArrowLeft, Camera } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const EditProfilePage: React.FC = () => {

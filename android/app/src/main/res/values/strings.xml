@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Drapes Inventory Instyle</string>
+    <string name="title_activity_main">Drapes Inventory Instyle</string>
+    <string name="package_name">com.decordrapesinstyle.inventory</string>
+    <string name="custom_url_scheme">com.decordrapesinstyle.inventory</string>
+</resources>
