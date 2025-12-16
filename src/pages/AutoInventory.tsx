@@ -77,7 +77,6 @@ const AutoInventoryPage: React.FC = () => {
           productName: value.productName || 'Unnamed Product',
           stock: value.stock || 0,
           unit: value.unit || 'pcs',
-          category: value.category || 'Uncategorized',
           createdAt: value.createdAt || 0,
           updatedAt: value.updatedAt || 0,
         })).sort((a, b) => b.updatedAt - a.updatedAt);
@@ -288,7 +287,7 @@ const AutoInventoryPage: React.FC = () => {
             <input
               ref={searchInputRef}
               type="text"
-              placeholder="Search products or ID..."
+              placeholder="Search products"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-12 pr-10 py-3.5 bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-800 focus:border-blue-500 dark:focus:border-blue-600 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-500 text-base"
