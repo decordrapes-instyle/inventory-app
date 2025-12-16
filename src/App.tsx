@@ -10,6 +10,9 @@ import AppNavigation from './components/AppNavigation';
 import EditProfilePage from './pages/EditProfilePage';
 import ProductsPage from './pages/ProductsPage';
 import AutoInventoryPage from './pages/AutoInventory';
+import { useEffect } from 'react';
+import { setDarkStatusBar, setLightStatusBar } from './statusBar';
+
 
 const AppContent: React.FC = () => {
   const { user, loading, darkMode } = useAuth();
@@ -80,13 +83,27 @@ const AppContent: React.FC = () => {
   );
 };
 
+function AppWithStatusBar() {
+  const { darkMode } = useAuth();
+
+  useEffect(() => {
+    if (darkMode === 'dark') {
+      setDarkStatusBar();
+    } else {
+      setLightStatusBar();
+    }
+  }, [darkMode]);
+
+  return <AppContent />;
+}
+
 function App() {
   return (
-    <Router>
-      <AuthProvider>
-        <AppContent />
-      </AuthProvider>
-    </Router>
+    <AuthProvider>
+      <Router>
+        <AppWithStatusBar />
+      </Router>
+    </AuthProvider>
   );
 }
 

@@ -2,14 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body {
-  height: 100%;
-  margin: 0;
-}
+@layer base {
+  html, body {
+    @apply bg-white dark:bg-black;
+    margin: 0;
+    padding: 0;
+  }
 
-#root {
-  min-height: 100%;
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
-  box-sizing: border-box;
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 }

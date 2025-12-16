@@ -3,14 +3,22 @@ import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, User, Moon, Sun, Edit3 } from 'lucide-react';
+import { setDarkStatusBar, setLightStatusBar } from '../statusBar';
+
 
 const ProfilePage: React.FC = () => {
   const { userProfile, logout, darkMode, updateDarkMode } = useAuth();
   const navigate = useNavigate();
 
   const toggleDarkMode = () => {
-    updateDarkMode(darkMode === 'dark' ? 'light' : 'dark');
-  };
+  if (darkMode === 'dark') {
+    updateDarkMode('light');
+    setLightStatusBar();
+  } else {
+    updateDarkMode('dark');
+    setDarkStatusBar();
+  }
+};
 
   const handleLogout = async () => {
     await logout();
