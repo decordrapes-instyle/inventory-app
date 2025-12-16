@@ -57,13 +57,8 @@ const AutoInventoryPage: React.FC = () => {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const adjustInputRef = useRef<HTMLInputElement>(null);
 
-  // Focus search input on mount
-  useEffect(() => {
-    setTimeout(() => {
-      searchInputRef.current?.focus();
-    }, 300);
-  }, []);
-
+  // REMOVED the auto-focus useEffect for search input
+  
   useEffect(() => {
     setLoading(true);
     const productsRef = ref(database, 'quotations/inventory');
@@ -96,6 +91,7 @@ const AutoInventoryPage: React.FC = () => {
     };
   }, []);
 
+  // Keep focus for adjust modal when it opens
   useEffect(() => {
     if (showAdjustModal) {
       setTimeout(() => {
@@ -291,6 +287,7 @@ const AutoInventoryPage: React.FC = () => {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-12 pr-10 py-3.5 bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-800 focus:border-blue-500 dark:focus:border-blue-600 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-500 text-base"
+              // No autoFocus attribute - user must manually click to focus
             />
             {searchTerm && (
               <button
