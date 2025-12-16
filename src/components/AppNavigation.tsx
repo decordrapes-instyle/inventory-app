@@ -104,12 +104,6 @@ const AppNavigation: React.FC = () => {
           </ProfileNavItem>
         </div>
       </div>
-
-      {/* Fixed spacer at top that never scrolls away */}
-      <div className="fixed top-0 left-0 right-0 z-40 bg-white dark:bg-black h-12 pointer-events-none" />
-      
-      {/* Spacer at bottom for content - this pushes content up */}
-      <div className=" dark:bg-black md:hidden h-12" />
     </>
   );
 };

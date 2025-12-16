@@ -5,7 +5,7 @@ import { database } from '../config/firebase';
 import { 
   Search, Package, History, 
   TrendingUp, TrendingDown, Plus, 
-  Minus, Filter, X, Check, ChevronRight,
+  Minus, Filter, X, Check, 
   RefreshCw, AlertCircle, Clock, User,
   Maximize2, ZoomIn, ZoomOut
 } from 'lucide-react';
