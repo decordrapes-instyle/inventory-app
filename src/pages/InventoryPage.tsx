@@ -1,17 +1,46 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { ref, push, set, get, update } from 'firebase/database';
-import { database } from '../config/firebase';
-import { 
-  Search, Package, History, 
-  TrendingUp, TrendingDown, Plus, 
-  Minus, Filter, X, Check, 
-  RefreshCw, AlertCircle, Clock, User,
-  Maximize2, ZoomIn, ZoomOut
-} from 'lucide-react';
-import toast, { Toaster } from 'react-hot-toast';
+import React, { useState, useEffect, useRef } from "react";
+import { useAuth } from "../context/AuthContext";
+import { ref, push, set, get, update } from "firebase/database";
+import { database } from "../config/firebase";
+import {
+  Search,
+  Package,
+  History,
+  TrendingUp,
+  TrendingDown,
+  Plus,
+  Minus,
+  X,
+  Check,
+  RefreshCw,
+  AlertCircle,
+  Clock,
+  User,
+  Maximize2,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
+import toast, { Toaster } from "react-hot-toast";
 
-type InventoryUnit = 'piece' | 'meter' | 'foot' | 'length' | 'box' | 'sqft' | 'pcs' | 'kgs' | 'pkt' | 'roll' | 'set' | 'carton' | 'bundle' | 'dozen' | 'kg' | 'inch' | 'cm' | 'mm';
+type InventoryUnit =
+  | "piece"
+  | "meter"
+  | "foot"
+  | "length"
+  | "box"
+  | "sqft"
+  | "pcs"
+  | "kgs"
+  | "pkt"
+  | "roll"
+  | "set"
+  | "carton"
+  | "bundle"
+  | "dozen"
+  | "kg"
+  | "inch"
+  | "cm"
+  | "mm";
 
 interface Product {
   id: string;
@@ -31,7 +60,7 @@ interface Transaction {
   productName: string;
   quantityChange: number;
   unit: InventoryUnit;
-  source: 'quotation' | 'manual' | 'purchase';
+  source: "quotation" | "manual" | "purchase";
   quotationId?: string;
   purchaseId?: string;
   note?: string;
@@ -42,18 +71,20 @@ interface Transaction {
 const InventoryPage: React.FC = () => {
   const { user } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showAdjustModal, setShowAdjustModal] = useState(false);
   const [showImageModal, setShowImageModal] = useState(false);
-  const [productTransactions, setProductTransactions] = useState<Transaction[]>([]);
+  const [productTransactions, setProductTransactions] = useState<Transaction[]>(
+    []
+  );
   const [loading, setLoading] = useState(true);
-  const [adjustQuantity, setAdjustQuantity] = useState('');
-  const [adjustNote, setAdjustNote] = useState('');
-  const [adjustType, setAdjustType] = useState<'add' | 'reduce'>('add');
+  const [adjustQuantity, setAdjustQuantity] = useState("");
+  const [adjustNote, setAdjustNote] = useState("");
+  const [adjustType, setAdjustType] = useState<"add" | "reduce">("add");
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'all' | 'low' | 'out'>('all');
+  const [activeTab, setActiveTab] = useState<"all" | "low" | "out">("all");
   const [imageZoom, setImageZoom] = useState(1);
   const imageContainerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -61,9 +92,9 @@ const InventoryPage: React.FC = () => {
   // Fetch products from Firebase
   const fetchProducts = async () => {
     try {
-      const productsRef = ref(database, 'quotations/manualInventory');
+      const productsRef = ref(database, "quotations/manualInventory");
       const snapshot = await get(productsRef);
-      
+
       if (snapshot.exists()) {
         const data = snapshot.val();
         const productsList = Object.entries(data).map(([key, value]: any) => ({
@@ -75,8 +106,8 @@ const InventoryPage: React.FC = () => {
         setProducts([]);
       }
     } catch (err: any) {
-      console.error('Error loading products:', err);
-      toast.error('Failed to load inventory');
+      console.error("Error loading products:", err);
+      toast.error("Failed to load inventory");
       setProducts([]);
     } finally {
       setLoading(false);
@@ -91,56 +122,63 @@ const InventoryPage: React.FC = () => {
   const handleRefresh = async () => {
     setRefreshing(true);
     await fetchProducts();
-    toast.success('Refreshed');
+    toast.success("Refreshed");
   };
 
   const handleAdjustStock = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProduct || !adjustQuantity) {
-      toast.error('Enter quantity');
+      toast.error("Enter quantity");
       return;
     }
 
     try {
       let quantityChange = parseFloat(adjustQuantity);
-      
+
       if (isNaN(quantityChange) || quantityChange <= 0) {
-        toast.error('Enter valid quantity');
+        toast.error("Enter valid quantity");
         return;
       }
 
-      if (adjustType === 'reduce') {
+      if (adjustType === "reduce") {
         if (quantityChange > selectedProduct.stock) {
-          toast.error('Cannot reduce more than available stock');
+          toast.error("Cannot reduce more than available stock");
           return;
         }
         quantityChange = -quantityChange;
       }
 
-      const productRef = ref(database, `quotations/manualInventory/${selectedProduct.id}`);
+      const productRef = ref(
+        database,
+        `quotations/manualInventory/${selectedProduct.id}`
+      );
       const snapshot = await get(productRef);
       const currentProduct = snapshot.val();
-      
+
       if (!currentProduct) {
-        toast.error('Product not found');
+        toast.error("Product not found");
         return;
       }
 
       const currentStock = currentProduct.stock || 0;
       const newStock = currentStock + quantityChange;
 
-      const userInfo = user ? (user.displayName || user.email || user.uid) : 'User';
-      const finalNote = adjustNote ? 
-        `${adjustNote} (${userInfo})` : 
-        `${quantityChange > 0 ? 'Added' : 'Removed'} by ${userInfo}`;
+      const userInfo = user
+        ? user.displayName || user.email || user.uid
+        : "User";
+      const finalNote = adjustNote
+        ? `${adjustNote} (${userInfo})`
+        : `${quantityChange > 0 ? "Added" : "Removed"} by ${userInfo}`;
 
-      const transactionRef = push(ref(database, `quotations/inventoryTransactions/${selectedProduct.id}`));
+      const transactionRef = push(
+        ref(database, `quotations/inventoryTransactions/${selectedProduct.id}`)
+      );
       const transactionData = {
         productId: selectedProduct.productId,
         productName: selectedProduct.productName,
         quantityChange: quantityChange,
         unit: selectedProduct.unit,
-        source: 'manual',
+        source: "manual",
         note: finalNote,
         performedBy: userInfo,
         createdAt: Date.now(),
@@ -153,32 +191,37 @@ const InventoryPage: React.FC = () => {
       });
 
       // Update local state
-      setProducts(prev => prev.map(p => 
-        p.id === selectedProduct.id 
-          ? {...p, stock: newStock, updatedAt: Date.now()}
-          : p
-      ));
-      
-      toast.success(`Stock ${quantityChange > 0 ? 'added' : 'removed'}`);
-      
+      setProducts((prev) =>
+        prev.map((p) =>
+          p.id === selectedProduct.id
+            ? { ...p, stock: newStock, updatedAt: Date.now() }
+            : p
+        )
+      );
+
+      toast.success(`Stock ${quantityChange > 0 ? "added" : "removed"}`);
+
       setShowAdjustModal(false);
-      setAdjustQuantity('');
-      setAdjustNote('');
+      setAdjustQuantity("");
+      setAdjustNote("");
       setSelectedProduct(null);
     } catch (err: any) {
-      console.error('Transaction error:', err);
-      toast.error('Failed to update');
+      console.error("Transaction error:", err);
+      toast.error("Failed to update");
     }
   };
 
   const handleViewHistory = async (product: Product) => {
     setSelectedProduct(product);
     setLoading(true);
-    
+
     try {
-      const transactionsRef = ref(database, `quotations/inventoryTransactions/${product.id}`);
+      const transactionsRef = ref(
+        database,
+        `quotations/inventoryTransactions/${product.id}`
+      );
       const snapshot = await get(transactionsRef);
-      
+
       if (snapshot.exists()) {
         const data = snapshot.val();
         const transactionsList = Object.entries(data)
@@ -191,11 +234,11 @@ const InventoryPage: React.FC = () => {
       } else {
         setProductTransactions([]);
       }
-      
+
       setShowHistoryModal(true);
     } catch (err: any) {
-      console.error('Error loading transactions:', err);
-      toast.error('Failed to load history');
+      console.error("Error loading transactions:", err);
+      toast.error("Failed to load history");
     } finally {
       setLoading(false);
     }
@@ -209,11 +252,11 @@ const InventoryPage: React.FC = () => {
   };
 
   const handleZoomIn = () => {
-    setImageZoom(prev => Math.min(prev + 0.25, 3));
+    setImageZoom((prev) => Math.min(prev + 0.25, 3));
   };
 
   const handleZoomOut = () => {
-    setImageZoom(prev => Math.max(prev - 0.25, 0.5));
+    setImageZoom((prev) => Math.max(prev - 0.25, 0.5));
   };
 
   const handleResetZoom = () => {
@@ -222,15 +265,16 @@ const InventoryPage: React.FC = () => {
 
   // Filter products based on active tab
   const getFilteredProducts = () => {
-    let filtered = products.filter(p =>
-      p.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.productId.toLowerCase().includes(searchTerm.toLowerCase())
+    let filtered = products.filter(
+      (p) =>
+        p.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.productId.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    if (activeTab === 'low') {
-      filtered = filtered.filter(p => p.stock > 0 && p.stock <= 10);
-    } else if (activeTab === 'out') {
-      filtered = filtered.filter(p => p.stock === 0);
+    if (activeTab === "low") {
+      filtered = filtered.filter((p) => p.stock > 0 && p.stock <= 10);
+    } else if (activeTab === "out") {
+      filtered = filtered.filter((p) => p.stock === 0);
     }
 
     return filtered;
@@ -240,17 +284,19 @@ const InventoryPage: React.FC = () => {
 
   // Stats
   const totalProducts = products.length;
-  const lowStockCount = products.filter(p => p.stock > 0 && p.stock <= 10).length;
-  const outOfStockCount = products.filter(p => p.stock === 0).length;
+  const lowStockCount = products.filter(
+    (p) => p.stock > 0 && p.stock <= 10
+  ).length;
+  const outOfStockCount = products.filter((p) => p.stock === 0).length;
 
   useEffect(() => {
     if (showHistoryModal || showAdjustModal || showImageModal) {
-      document.body.style.overflow = 'hidden';
+      document.body.style.overflow = "hidden";
     } else {
-      document.body.style.overflow = 'auto';
+      document.body.style.overflow = "auto";
     }
     return () => {
-      document.body.style.overflow = 'auto';
+      document.body.style.overflow = "auto";
     };
   }, [showHistoryModal, showAdjustModal, showImageModal]);
 
@@ -267,33 +313,39 @@ const InventoryPage: React.FC = () => {
 
   return (
     <>
-      <Toaster 
+      <Toaster
         position="top-center"
         toastOptions={{
           duration: 2000,
           style: {
-            background: '#1a1a1a',
-            color: '#fff',
-            borderRadius: '8px',
-            fontSize: '14px',
+            background: "#1a1a1a",
+            color: "#fff",
+            borderRadius: "8px",
+            fontSize: "14px",
           },
         }}
       />
-      
-      <div className="min-h-screen bg-gray-50 dark:bg-black text-gray-900 dark:text-white pb-20">
+
+      <div className="pt-safe min-h-screen bg-gray-50 dark:bg-black text-gray-900 dark:text-white pb-20">
         {/* Header */}
         <div className="sticky top-0 z-20 bg-white/80 dark:bg-black/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-900 px-4 py-3">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h1 className="text-xl font-bold">Inventory</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{totalProducts} products</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {totalProducts} products
+              </p>
             </div>
             <button
               onClick={handleRefresh}
               className="p-2 bg-gray-100 dark:bg-gray-900 rounded-lg"
               disabled={refreshing}
             >
-              <RefreshCw className={`w-5 h-5 text-gray-600 dark:text-gray-400 ${refreshing ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`w-5 h-5 text-gray-600 dark:text-gray-400 ${
+                  refreshing ? "animate-spin" : ""
+                }`}
+              />
             </button>
           </div>
 
@@ -310,7 +362,7 @@ const InventoryPage: React.FC = () => {
             />
             {searchTerm && (
               <button
-                onClick={() => setSearchTerm('')}
+                onClick={() => setSearchTerm("")}
                 className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1"
               >
                 <X className="w-4 h-4 text-gray-400 dark:text-gray-500" />
@@ -321,32 +373,32 @@ const InventoryPage: React.FC = () => {
           {/* Tabs */}
           <div className="flex bg-gray-100 dark:bg-gray-900 p-1 rounded-xl">
             <button
-              onClick={() => setActiveTab('all')}
+              onClick={() => setActiveTab("all")}
               className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                activeTab === 'all'
-                  ? 'bg-blue-500 text-white'
-                  : 'text-gray-600 dark:text-gray-400'
+                activeTab === "all"
+                  ? "bg-blue-500 text-white"
+                  : "text-gray-600 dark:text-gray-400"
               }`}
             >
               All ({totalProducts})
             </button>
             <button
-              onClick={() => setActiveTab('low')}
+              onClick={() => setActiveTab("low")}
               className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-                activeTab === 'low'
-                  ? 'bg-orange-500 text-white'
-                  : 'text-gray-600 dark:text-gray-400'
+                activeTab === "low"
+                  ? "bg-orange-500 text-white"
+                  : "text-gray-600 dark:text-gray-400"
               }`}
             >
               <AlertCircle className="w-4 h-4" />
               Low ({lowStockCount})
             </button>
             <button
-              onClick={() => setActiveTab('out')}
+              onClick={() => setActiveTab("out")}
               className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-                activeTab === 'out'
-                  ? 'bg-red-500 text-white'
-                  : 'text-gray-600 dark:text-gray-400'
+                activeTab === "out"
+                  ? "bg-red-500 text-white"
+                  : "text-gray-600 dark:text-gray-400"
               }`}
             >
               <AlertCircle className="w-4 h-4" />
@@ -361,11 +413,11 @@ const InventoryPage: React.FC = () => {
             <div className="text-center py-16">
               <Package className="w-16 h-16 text-gray-300 dark:text-gray-800 mx-auto mb-4" />
               <p className="text-gray-500 dark:text-gray-400">
-                {searchTerm ? 'No products found' : 'No products available'}
+                {searchTerm ? "No products found" : "No products available"}
               </p>
               {searchTerm && (
                 <button
-                  onClick={() => setSearchTerm('')}
+                  onClick={() => setSearchTerm("")}
                   className="mt-4 px-6 py-2 bg-blue-500 text-white rounded-lg font-medium"
                 >
                   Clear Search
@@ -375,21 +427,21 @@ const InventoryPage: React.FC = () => {
           ) : (
             <div className="space-y-2">
               {filteredProducts.map((product) => (
-                <div 
+                <div
                   key={product.id}
                   onClick={() => handleViewHistory(product)}
                   className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 active:scale-[0.98] transition-transform"
                 >
                   <div className="p-3 flex items-start gap-3">
                     {/* Product Image with click to zoom */}
-                    <div 
+                    <div
                       onClick={(e) => handleImageClick(product, e)}
                       className="w-14 h-14 bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden flex-shrink-0 relative group cursor-pointer"
                     >
                       {product.imageUrl ? (
                         <>
-                          <img 
-                            src={product.imageUrl} 
+                          <img
+                            src={product.imageUrl}
                             alt={product.productName}
                             className="w-full h-full object-cover"
                           />
@@ -406,37 +458,57 @@ const InventoryPage: React.FC = () => {
 
                     {/* Product Info */}
                     <div className="flex-1 min-w-0">
+                      {/* Name & Chip */}
                       <div className="flex justify-between items-start mb-1">
-                        <h3 className="font-semibold truncate text-sm">
+                        {/* Name can wrap */}
+                        <h3 className="font-semibold text-sm flex-1">
                           {product.productName}
                         </h3>
-                        <span className={`text-xs font-bold px-2 py-1 rounded-full ${
-                          product.stock === 0
-                            ? 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400'
-                            : product.stock <= 10
-                            ? 'bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-400'
-                            : 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-400'
-                        }`}>
+
+                        {/* Stock Chip fixed size */}
+                        <span
+                          className={`flex-shrink-0 text-xs font-bold px-2 py-1 rounded-full ${
+                            product.stock === 0
+                              ? "bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400"
+                              : product.stock <= 10
+                              ? "bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-400"
+                              : "bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-400"
+                          }`}
+                        >
                           {product.stock.toFixed(2)} {product.unit}
                         </span>
                       </div>
-                      
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">ID: {product.productId}</p>
-                      
+
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                        ID: {product.productId}
+                      </p>
+
                       {/* Stock Indicator */}
                       <div className="mb-3">
                         <div className="flex justify-between text-xs mb-1">
-                          <span className="text-gray-500 dark:text-gray-400">Stock</span>
-                          <span className="text-gray-500 dark:text-gray-400">{product.stock <= 100 ? product.stock.toFixed(0) : '100'}%</span>
+                          <span className="text-gray-500 dark:text-gray-400">
+                            Stock
+                          </span>
+                          <span className="text-gray-500 dark:text-gray-400">
+                            {product.stock <= 100
+                              ? product.stock.toFixed(0)
+                              : "100"}
+                            %
+                          </span>
                         </div>
                         <div className="w-full bg-gray-200 dark:bg-gray-800 rounded-full h-1.5">
-                          <div className={`h-1.5 rounded-full ${
-                            product.stock === 0
-                              ? 'bg-red-500'
-                              : product.stock <= 10
-                              ? 'bg-orange-500'
-                              : 'bg-green-500'
-                          }`} style={{ width: `${Math.min(100, product.stock)}%` }}></div>
+                          <div
+                            className={`h-1.5 rounded-full ${
+                              product.stock === 0
+                                ? "bg-red-500"
+                                : product.stock <= 10
+                                ? "bg-orange-500"
+                                : "bg-green-500"
+                            }`}
+                            style={{
+                              width: `${Math.min(100, product.stock)}%`,
+                            }}
+                          ></div>
                         </div>
                       </div>
 
@@ -459,66 +531,34 @@ const InventoryPage: React.FC = () => {
           )}
         </div>
 
-        {/* Add Product FAB */}
-        <button
-          onClick={() => toast('Add Product feature coming soon!')}
-          className="fixed bottom-24 right-4 bg-blue-500 text-white rounded-full p-4 shadow-lg active:scale-95 transition-transform"
-        >
-          <Plus className="w-6 h-6" />
-        </button>
-
-        {/* Bottom Navigation */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-black border-t border-gray-200 dark:border-gray-900 p-3">
-          <div className="flex justify-around">
-            <button
-              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-              className="flex flex-col items-center p-2 text-blue-500"
-            >
-              <Package className="w-5 h-5 mb-1" />
-              <span className="text-xs">Inventory</span>
-            </button>
-            <button
-              onClick={() => toast('Coming soon')}
-              className="flex flex-col items-center p-2 text-gray-500 dark:text-gray-400"
-            >
-              <Filter className="w-5 h-5 mb-1" />
-              <span className="text-xs">Reports</span>
-            </button>
-            <button
-              onClick={() => toast('Coming soon')}
-              className="flex flex-col items-center p-2 text-gray-500 dark:text-gray-400"
-            >
-              <TrendingUp className="w-5 h-5 mb-1" />
-              <span className="text-xs">Analytics</span>
-            </button>
-          </div>
-        </div>
-
         {/* Image Zoom Modal */}
         {showImageModal && selectedProduct && selectedProduct.imageUrl && (
           <div className="fixed inset-0 z-50">
             {/* Backdrop */}
-            <div 
+            <div
               className="absolute inset-0 bg-black/90 dark:bg-black/90"
               onClick={() => {
                 setShowImageModal(false);
                 setImageZoom(1);
               }}
             />
-            
+
             {/* Image Container */}
             <div className="absolute inset-0 flex items-center justify-center p-4">
-              <div 
+              <div
                 ref={imageContainerRef}
                 className="relative w-full h-full flex items-center justify-center"
-                style={{ transform: `scale(${imageZoom})`, transition: 'transform 0.2s' }}
+                style={{
+                  transform: `scale(${imageZoom})`,
+                  transition: "transform 0.2s",
+                }}
               >
-                <img 
+                <img
                   src={selectedProduct.imageUrl}
                   alt={selectedProduct.productName}
                   className="max-w-full max-h-full object-contain rounded-lg"
                 />
-                
+
                 {/* Zoom Controls */}
                 <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-900/80 dark:bg-gray-900/80 backdrop-blur-sm rounded-full p-2 flex items-center gap-2">
                   <button
@@ -560,16 +600,16 @@ const InventoryPage: React.FC = () => {
         {showAdjustModal && selectedProduct && (
           <div className="fixed inset-0 z-50">
             {/* Backdrop */}
-            <div 
+            <div
               className="absolute inset-0 bg-black/70 dark:bg-black/70"
               onClick={() => {
                 setShowAdjustModal(false);
                 setSelectedProduct(null);
-                setAdjustQuantity('');
-                setAdjustNote('');
+                setAdjustQuantity("");
+                setAdjustNote("");
               }}
             />
-            
+
             {/* Modal Sheet */}
             <div className="absolute bottom-0 left-0 right-0 bg-white dark:bg-gray-900 rounded-t-3xl max-h-[85vh] overflow-hidden border-t border-gray-200 dark:border-gray-800">
               {/* Handle */}
@@ -585,15 +625,17 @@ const InventoryPage: React.FC = () => {
                     onClick={() => {
                       setShowAdjustModal(false);
                       setSelectedProduct(null);
-                      setAdjustQuantity('');
-                      setAdjustNote('');
+                      setAdjustQuantity("");
+                      setAdjustNote("");
                     }}
                     className="p-2"
                   >
                     <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
                   </button>
                 </div>
-                <p className="text-sm text-gray-500 dark:text-gray-400">{selectedProduct.productName}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {selectedProduct.productName}
+                </p>
               </div>
 
               <div className="p-4 overflow-y-auto max-h-[60vh]">
@@ -601,18 +643,28 @@ const InventoryPage: React.FC = () => {
                 <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl">
                   <div className="flex justify-between items-center">
                     <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Current Stock</p>
-                      <p className="text-2xl font-bold">{selectedProduct.stock.toFixed(2)} {selectedProduct.unit}</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        Current Stock
+                      </p>
+                      <p className="text-2xl font-bold">
+                        {selectedProduct.stock.toFixed(2)}{" "}
+                        {selectedProduct.unit}
+                      </p>
                     </div>
-                    <div className={`text-lg font-bold ${
-                      selectedProduct.stock === 0
-                        ? 'text-red-600 dark:text-red-400'
+                    <div
+                      className={`text-lg font-bold ${
+                        selectedProduct.stock === 0
+                          ? "text-red-600 dark:text-red-400"
+                          : selectedProduct.stock <= 10
+                          ? "text-orange-600 dark:text-orange-400"
+                          : "text-green-600 dark:text-green-400"
+                      }`}
+                    >
+                      {selectedProduct.stock === 0
+                        ? "Out of Stock"
                         : selectedProduct.stock <= 10
-                        ? 'text-orange-600 dark:text-orange-400'
-                        : 'text-green-600 dark:text-green-400'
-                    }`}>
-                      {selectedProduct.stock === 0 ? 'Out of Stock' : 
-                       selectedProduct.stock <= 10 ? 'Low Stock' : 'In Stock'}
+                        ? "Low Stock"
+                        : "In Stock"}
                     </div>
                   </div>
                 </div>
@@ -620,22 +672,22 @@ const InventoryPage: React.FC = () => {
                 {/* Adjust Type */}
                 <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-xl mb-6">
                   <button
-                    onClick={() => setAdjustType('add')}
+                    onClick={() => setAdjustType("add")}
                     className={`flex-1 py-3 rounded-lg flex items-center justify-center gap-2 ${
-                      adjustType === 'add'
-                        ? 'bg-blue-500 text-white'
-                        : 'text-gray-600 dark:text-gray-400'
+                      adjustType === "add"
+                        ? "bg-blue-500 text-white"
+                        : "text-gray-600 dark:text-gray-400"
                     }`}
                   >
                     <Plus className="w-4 h-4" />
                     Add Stock
                   </button>
                   <button
-                    onClick={() => setAdjustType('reduce')}
+                    onClick={() => setAdjustType("reduce")}
                     className={`flex-1 py-3 rounded-lg flex items-center justify-center gap-2 ${
-                      adjustType === 'reduce'
-                        ? 'bg-red-500 text-white'
-                        : 'text-gray-600 dark:text-gray-400'
+                      adjustType === "reduce"
+                        ? "bg-red-500 text-white"
+                        : "text-gray-600 dark:text-gray-400"
                     }`}
                   >
                     <Minus className="w-4 h-4" />
@@ -645,7 +697,9 @@ const InventoryPage: React.FC = () => {
 
                 {/* Quantity Input */}
                 <div className="mb-6">
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">Quantity</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                    Quantity
+                  </p>
                   <div className="flex gap-2">
                     <input
                       type="number"
@@ -663,7 +717,9 @@ const InventoryPage: React.FC = () => {
 
                 {/* Note */}
                 <div className="mb-6">
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">Note (Optional)</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                    Note (Optional)
+                  </p>
                   <textarea
                     value={adjustNote}
                     onChange={(e) => setAdjustNote(e.target.value)}
@@ -679,8 +735,8 @@ const InventoryPage: React.FC = () => {
                     onClick={() => {
                       setShowAdjustModal(false);
                       setSelectedProduct(null);
-                      setAdjustQuantity('');
-                      setAdjustNote('');
+                      setAdjustQuantity("");
+                      setAdjustNote("");
                     }}
                     className="flex-1 py-3 bg-gray-100 dark:bg-gray-800 rounded-xl font-medium active:scale-95 text-gray-700 dark:text-gray-300"
                   >
@@ -703,7 +759,7 @@ const InventoryPage: React.FC = () => {
         {showHistoryModal && selectedProduct && (
           <div className="fixed inset-0 z-50">
             {/* Backdrop */}
-            <div 
+            <div
               className="absolute inset-0 bg-black/70 dark:bg-black/70"
               onClick={() => {
                 setShowHistoryModal(false);
@@ -711,7 +767,7 @@ const InventoryPage: React.FC = () => {
                 setProductTransactions([]);
               }}
             />
-            
+
             {/* Modal Sheet */}
             <div className="absolute bottom-0 left-0 right-0 bg-white dark:bg-gray-900 rounded-t-3xl max-h-[85vh] overflow-hidden border-t border-gray-200 dark:border-gray-800">
               {/* Handle */}
@@ -724,7 +780,9 @@ const InventoryPage: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <h2 className="text-lg font-bold">Transaction History</h2>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{selectedProduct.productName}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                      {selectedProduct.productName}
+                    </p>
                   </div>
                   <button
                     onClick={() => {
@@ -743,24 +801,33 @@ const InventoryPage: React.FC = () => {
                 {loading ? (
                   <div className="text-center py-8">
                     <div className="w-12 h-12 border-4 border-gray-200 dark:border-gray-800 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
-                    <p className="text-gray-500 dark:text-gray-400">Loading...</p>
+                    <p className="text-gray-500 dark:text-gray-400">
+                      Loading...
+                    </p>
                   </div>
                 ) : productTransactions.length === 0 ? (
                   <div className="text-center py-8">
                     <History className="w-16 h-16 text-gray-300 dark:text-gray-800 mx-auto mb-4" />
-                    <p className="text-gray-500 dark:text-gray-400">No transactions yet</p>
+                    <p className="text-gray-500 dark:text-gray-400">
+                      No transactions yet
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     {productTransactions.map((transaction) => (
-                      <div key={transaction.id} className="p-3 bg-gray-50 dark:bg-gray-800 rounded-xl">
+                      <div
+                        key={transaction.id}
+                        className="p-3 bg-gray-50 dark:bg-gray-800 rounded-xl"
+                      >
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex items-center gap-3">
-                            <div className={`p-2 rounded-lg ${
-                              transaction.quantityChange > 0 
-                                ? 'bg-green-100 dark:bg-green-900/30' 
-                                : 'bg-red-100 dark:bg-red-900/30'
-                            }`}>
+                            <div
+                              className={`p-2 rounded-lg ${
+                                transaction.quantityChange > 0
+                                  ? "bg-green-100 dark:bg-green-900/30"
+                                  : "bg-red-100 dark:bg-red-900/30"
+                              }`}
+                            >
                               {transaction.quantityChange > 0 ? (
                                 <TrendingUp className="w-4 h-4 text-green-500" />
                               ) : (
@@ -768,38 +835,62 @@ const InventoryPage: React.FC = () => {
                               )}
                             </div>
                             <div>
-                              <span className={`text-lg font-bold ${
-                                transaction.quantityChange > 0 
-                                  ? 'text-green-600'
-                                  : 'text-red-600'
-                              }`}>
-                                {transaction.quantityChange > 0 ? '+' : ''}{Number(transaction.quantityChange).toFixed(2)} {transaction.unit}
+                              <span
+                                className={`text-lg font-bold ${
+                                  transaction.quantityChange > 0
+                                    ? "text-green-600"
+                                    : "text-red-600"
+                                }`}
+                              >
+                                {transaction.quantityChange > 0 ? "+" : ""}
+                                {Number(transaction.quantityChange).toFixed(
+                                  2
+                                )}{" "}
+                                {transaction.unit}
                               </span>
-                              <p className="text-xs text-gray-500 dark:text-gray-400 capitalize mt-1">{transaction.source}</p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 capitalize mt-1">
+                                {transaction.source}
+                              </p>
                             </div>
                           </div>
                           <div className="text-right">
-                            <p className="text-sm">{new Date(transaction.createdAt).toLocaleDateString()}</p>
+                            <p className="text-sm">
+                              {new Date(
+                                transaction.createdAt
+                              ).toLocaleDateString()}
+                            </p>
                             <p className="text-xs text-gray-500 dark:text-gray-400">
-                              {new Date(transaction.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              {new Date(
+                                transaction.createdAt
+                              ).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
                             </p>
                           </div>
                         </div>
-                        
+
                         {transaction.note && (
                           <p className="text-sm text-gray-700 dark:text-gray-300 mb-3 p-2 bg-white/50 dark:bg-gray-900/50 rounded-lg">
                             {transaction.note}
                           </p>
                         )}
-                        
+
                         <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
                           <div className="flex items-center gap-1">
                             <User className="w-3 h-3" />
-                            <span>{transaction.performedBy || 'System'}</span>
+                            <span>{transaction.performedBy || "System"}</span>
                           </div>
                           <div className="flex items-center gap-1">
                             <Clock className="w-3 h-3" />
-                            <span>{new Date(transaction.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            <span>
+                              {new Date(
+                                transaction.createdAt
+                              ).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
                           </div>
                         </div>
                       </div>

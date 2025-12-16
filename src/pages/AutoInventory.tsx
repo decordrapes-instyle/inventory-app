@@ -265,7 +265,7 @@ const AutoInventoryPage: React.FC = () => {
         }}
       />
       
-      <div className="min-h-screen bg-white dark:bg-black text-gray-900 dark:text-white pb-24">
+      <div className="pt-safe min-h-screen bg-white dark:bg-black text-gray-900 dark:text-white pb-16">
         {/* Enhanced Search Header */}
         <div className="sticky top-0 z-20 bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800 px-4 py-3">
           <div className="flex items-center gap-3 mb-3">

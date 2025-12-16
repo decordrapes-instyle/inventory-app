@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -10,17 +10,17 @@ import {
 } from 'firebase/auth';
 import { auth, database } from '../config/firebase';
 import { ref, set, get, child } from 'firebase/database';
+import { setDarkStatusBar, setLightStatusBar } from '../statusBar';
 
-// Helper function to get from local storage
 const getLocalStorage = (key: string) => {
   const storedValue = localStorage.getItem(key);
   return storedValue ? JSON.parse(storedValue) : null;
 };
-
-// Helper function to set in local storage
 const setLocalStorage = (key: string, value: any) => {
   localStorage.setItem(key, JSON.stringify(value));
 };
+
+// Types
 interface UserProfile {
   uid: string;
   email: string;
@@ -34,23 +34,26 @@ interface AuthContextType {
   user: User | null;
   userProfile: UserProfile | null;
   loading: boolean;
-  darkMode: string;
+  darkMode: 'dark' | 'light';
   signup: (email: string, password: string, displayName: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (data: Partial<UserProfile>) => Promise<void>;
-  updateDarkMode: (mode: string) => void;
+  updateDarkMode: (mode: 'dark' | 'light') => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [darkMode, setDarkMode] = useState(getLocalStorage('darkmode') || 'light');
+  const [darkMode, setDarkMode] = useState<'dark' | 'light'>(
+    (getLocalStorage('darkmode') as 'dark' | 'light') || 'light'
+  );
 
+  // Load user auth state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
       setLoading(true);
@@ -63,106 +66,113 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       setLoading(false);
     });
-
     return unsubscribe;
   }, []);
 
+  // Fetch user profile
   const fetchUserProfile = async (uid: string) => {
     try {
       const dbRef = ref(database);
       const snapshot = await get(child(dbRef, `users/${uid}`));
-      if (snapshot.exists()) {
-        setUserProfile(snapshot.val());
-      }
+      if (snapshot.exists()) setUserProfile(snapshot.val());
     } catch (error) {
       console.error('Error fetching user profile:', error);
     }
   };
 
+  // Signup
   const signup = async (email: string, password: string, displayName: string) => {
-    try {
-      const result = await createUserWithEmailAndPassword(auth, email, password);
-      const user = result.user;
+    const result = await createUserWithEmailAndPassword(auth, email, password);
+    const user = result.user;
 
-      const userProfile: UserProfile = {
+    const profile: UserProfile = {
+      uid: user.uid,
+      email: user.email || '',
+      displayName,
+      profileImage: user.photoURL || '',
+      role: 'customer',
+      createdAt: Date.now(),
+    };
+
+    await set(ref(database, `users/${user.uid}`), profile);
+    setUserProfile(profile);
+  };
+
+  // Login
+  const login = async (email: string, password: string) => {
+    const result = await signInWithEmailAndPassword(auth, email, password);
+    await fetchUserProfile(result.user.uid);
+  };
+
+  // Google login
+  const loginWithGoogle = async () => {
+    const provider = new GoogleAuthProvider();
+    const result = await signInWithPopup(auth, provider);
+    const user = result.user;
+
+    const dbRef = ref(database);
+    const snapshot = await get(child(dbRef, `users/${user.uid}`));
+
+    if (!snapshot.exists()) {
+      const profile: UserProfile = {
         uid: user.uid,
         email: user.email || '',
-        displayName,
-        profileImage: user.photoURL || '',
+        displayName: user.displayName || 'User',
+        profileImage: user.photoURL || 'https://via.placeholder.com/150',
         role: 'customer',
         createdAt: Date.now(),
       };
-
-      await set(ref(database, `users/${user.uid}`), userProfile);
-      setUserProfile(userProfile);
-    } catch (error) {
-      throw error;
+      await set(ref(database, `users/${user.uid}`), profile);
+      setUserProfile(profile);
+    } else {
+      setUserProfile(snapshot.val());
     }
   };
 
-  const login = async (email: string, password: string) => {
-    try {
-      const result = await signInWithEmailAndPassword(auth, email, password);
-      await fetchUserProfile(result.user.uid);
-    } catch (error) {
-      throw error;
-    }
-  };
-
-  const loginWithGoogle = async () => {
-    try {
-      const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-
-      const dbRef = ref(database);
-      const snapshot = await get(child(dbRef, `users/${user.uid}`));
-
-      if (!snapshot.exists()) {
-        const userProfile: UserProfile = {
-          uid: user.uid,
-          email: user.email || '',
-          displayName: user.displayName || 'User',
-          profileImage: user.photoURL || 'https://via.placeholder.com/150',
-          role: 'customer',
-          createdAt: Date.now(),
-        };
-        await set(ref(database, `users/${user.uid}`), userProfile);
-        setUserProfile(userProfile);
-      } else {
-        setUserProfile(snapshot.val());
-      }
-    } catch (error) {
-      throw error;
-    }
-  };
-
+  // Logout
   const logout = async () => {
-    try {
-      await signOut(auth);
-      setUser(null);
-      setUserProfile(null);
-    } catch (error) {
-      throw error;
-    }
+    await signOut(auth);
+    setUser(null);
+    setUserProfile(null);
   };
 
+  // Update profile
   const updateProfile = async (data: Partial<UserProfile>) => {
     if (!user) throw new Error('No user logged in');
+    const updatedProfile = { ...userProfile, ...data } as UserProfile;
+    await set(ref(database, `users/${user.uid}`), updatedProfile);
+    setUserProfile(updatedProfile);
+  };
 
-    try {
-      const updatedProfile = { ...userProfile, ...data } as UserProfile;
-      await set(ref(database, `users/${user.uid}`), updatedProfile);
-      setUserProfile(updatedProfile);
-    } catch (error) {
-      throw error;
+  // ✅ DARK MODE: state + html class + localStorage + status bar
+  const updateDarkMode = (mode: 'dark' | 'light') => {
+    setDarkMode(mode);
+    setLocalStorage('darkmode', mode);
+
+    // Update Tailwind dark mode class
+    if (typeof document !== 'undefined') {
+      const html = document.documentElement;
+      if (mode === 'dark') {
+        html.classList.add('dark');
+        html.classList.remove('light');
+      } else {
+        html.classList.remove('dark');
+        html.classList.add('light');
+      }
+    }
+
+    // Update Capacitor status bar
+    if (mode === 'dark') {
+      setDarkStatusBar();
+    } else {
+      setLightStatusBar();
     }
   };
 
-  const updateDarkMode = (mode: string) => {
-    setDarkMode(mode);
-    setLocalStorage('darkmode', mode);
-  };
+  // Initialize html class + status bar on load
+  useEffect(() => {
+    updateDarkMode(darkMode);
+  }, []);
 
   return (
     <AuthContext.Provider
@@ -186,8 +196,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within AuthProvider');
   return context;
 };
