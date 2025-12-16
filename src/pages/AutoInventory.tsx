@@ -1,11 +1,13 @@
 // src/pages/AutoInventory.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { ref, push, set, get, update, onValue, off } from 'firebase/database';
 import { database } from '../config/firebase';
 import { 
   Search, Package, History, 
-  TrendingUp, TrendingDown, ArrowLeft
+  TrendingUp, TrendingDown, 
+  Plus, Minus, Filter, X,
+  ChevronRight, Calendar, User
 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 
@@ -21,10 +23,11 @@ interface Product {
   notes?: string;
   createdAt: number;
   updatedAt: number;
+  category?: string;
 }
 
 interface Transaction {
-  id:string;
+  id: string;
   productId: string;
   productName: string;
   quantityChange: number;
@@ -49,41 +52,61 @@ const AutoInventoryPage: React.FC = () => {
   const [adjustQuantity, setAdjustQuantity] = useState('');
   const [adjustNote, setAdjustNote] = useState('');
   const [adjustType, setAdjustType] = useState<'add' | 'reduce'>('add');
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterByStock, setFilterByStock] = useState<'all' | 'low' | 'out'>('all');
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const adjustInputRef = useRef<HTMLInputElement>(null);
+
+  // Focus search input on mount
+  useEffect(() => {
+    setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 300);
+  }, []);
 
   useEffect(() => {
     setLoading(true);
     const productsRef = ref(database, 'quotations/inventory');
 
     const listener = onValue(productsRef, (snapshot) => {
-        if (snapshot.exists()) {
-            const data = snapshot.val();
-            const productList: Product[] = Object.entries(data).map(([key, value]: any) => ({
-                id: key,
-                productId: value.productId || '',
-                productName: value.productName || 'Unnamed Product',
-                stock: value.stock || 0,
-                unit: value.unit || 'pcs',
-                createdAt: value.createdAt || 0,
-                updatedAt: value.updatedAt || 0,
-            })).sort((a, b) => b.updatedAt - a.updatedAt);
-            setProducts(productList);
-        } else {
-            setProducts([]);
-        }
-        setLoading(false);
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        const productList: Product[] = Object.entries(data).map(([key, value]: any) => ({
+          id: key,
+          productId: value.productId || '',
+          productName: value.productName || 'Unnamed Product',
+          stock: value.stock || 0,
+          unit: value.unit || 'pcs',
+          category: value.category || 'Uncategorized',
+          createdAt: value.createdAt || 0,
+          updatedAt: value.updatedAt || 0,
+        })).sort((a, b) => b.updatedAt - a.updatedAt);
+        setProducts(productList);
+      } else {
+        setProducts([]);
+      }
+      setLoading(false);
     }, (error) => {
-        console.error("Firebase error:", error);
-        toast.error("Failed to load products in real-time.");
-        setLoading(false);
+      console.error("Firebase error:", error);
+      toast.error("Failed to load products");
+      setLoading(false);
     });
 
     return () => {
-        off(productsRef, 'value', listener);
+      off(productsRef, 'value', listener);
     };
   }, []);
 
   useEffect(() => {
-    if (showHistoryModal || showAdjustModal) {
+    if (showAdjustModal) {
+      setTimeout(() => {
+        adjustInputRef.current?.focus();
+      }, 100);
+    }
+  }, [showAdjustModal]);
+
+  useEffect(() => {
+    if (showHistoryModal || showAdjustModal || showFilters) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = 'auto';
@@ -91,7 +114,7 @@ const AutoInventoryPage: React.FC = () => {
     return () => {
       document.body.style.overflow = 'auto';
     };
-  }, [showHistoryModal, showAdjustModal]);
+  }, [showHistoryModal, showAdjustModal, showFilters]);
 
   const handleAdjustStock = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -194,18 +217,44 @@ const AutoInventoryPage: React.FC = () => {
     }
   };
 
-  const filteredProducts = products.filter(
-    (p) =>
+  const handleQuickAdjust = (product: Product, type: 'add' | 'reduce') => {
+    setSelectedProduct(product);
+    setAdjustType(type);
+    setAdjustQuantity('');
+    setAdjustNote('');
+    setShowAdjustModal(true);
+  };
+
+  const filteredProducts = products.filter((p) => {
+    const matchesSearch = 
       p.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.productId.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+      p.productId.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    if (filterByStock === 'all') return matchesSearch;
+    if (filterByStock === 'low') return matchesSearch && p.stock > 0 && p.stock <= 10;
+    if (filterByStock === 'out') return matchesSearch && p.stock === 0;
+    return matchesSearch;
+  });
+
+  const getStockStatusColor = (stock: number) => {
+    if (stock === 0) return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300';
+    if (stock <= 10) return 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300';
+    return 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300';
+  };
+
+  const getStockStatusText = (stock: number) => {
+    if (stock === 0) return 'Out of Stock';
+    if (stock <= 10) return 'Low Stock';
+    return 'In Stock';
+  };
 
   if (loading && products.length === 0) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-black flex items-center justify-center p-4">
+      <div className="min-h-screen bg-white dark:bg-black flex items-center justify-center p-4">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-gray-200 dark:border-gray-800 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600 dark:text-gray-400">Loading auto inventory...</p>
+          <p className="text-gray-600 dark:text-gray-300 font-medium">Loading inventory...</p>
+          <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">Please wait</p>
         </div>
       </div>
     );
@@ -214,88 +263,193 @@ const AutoInventoryPage: React.FC = () => {
   return (
     <>
       <Toaster 
-        position="top-right"
+        position="top-center"
         toastOptions={{
-          className: 'dark:bg-gray-900 dark:text-white',
+          className: 'dark:bg-gray-900 dark:text-white border border-gray-200 dark:border-gray-800',
+          duration: 3000,
         }}
       />
       
-      <div className="min-h-screen bg-gray-50 dark:bg-black text-gray-900 dark:text-white pb-20">
-        {/* Search Header */}
-        <div className="sticky top-0 z-10 bg-white/80 dark:bg-black/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-900 px-4 py-3">
+      <div className="min-h-screen bg-white dark:bg-black text-gray-900 dark:text-white pb-24">
+        {/* Enhanced Search Header */}
+        <div className="sticky top-0 z-20 bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800 px-4 py-3">
+          <div className="flex items-center gap-3 mb-3">
+            <h1 className="text-xl font-bold text-gray-900 dark:text-white flex-1">Inventory</h1>
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`p-2.5 rounded-xl ${showFilters ? 'bg-blue-500 text-white' : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400'}`}
+            >
+              <Filter className="w-5 h-5" />
+            </button>
+          </div>
+          
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 dark:text-gray-500" />
             <input
+              ref={searchInputRef}
               type="text"
-              placeholder="Search products..."
+              placeholder="Search products or ID..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 bg-gray-100 dark:bg-gray-900 border-transparent focus:border-blue-500 dark:focus:border-blue-600 rounded-xl focus:outline-none focus:ring-0 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-500"
+              className="w-full pl-12 pr-10 py-3.5 bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-800 focus:border-blue-500 dark:focus:border-blue-600 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-500 text-base"
             />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-4 top-1/2 transform -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-400"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Product Grid */}
-        <div className="p-4">
+        {/* Quick Filter Bar */}
+        {showFilters && (
+          <div className="sticky top-20 z-10 bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800 px-4 py-3">
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              <button
+                onClick={() => setFilterByStock('all')}
+                className={`px-4 py-2.5 rounded-xl whitespace-nowrap text-sm font-medium transition-all ${filterByStock === 'all' ? 'bg-blue-500 text-white' : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400'}`}
+              >
+                All ({products.length})
+              </button>
+              <button
+                onClick={() => setFilterByStock('low')}
+                className={`px-4 py-2.5 rounded-xl whitespace-nowrap text-sm font-medium transition-all ${filterByStock === 'low' ? 'bg-orange-500 text-white' : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400'}`}
+              >
+                Low Stock ({products.filter(p => p.stock > 0 && p.stock <= 10).length})
+              </button>
+              <button
+                onClick={() => setFilterByStock('out')}
+                className={`px-4 py-2.5 rounded-xl whitespace-nowrap text-sm font-medium transition-all ${filterByStock === 'out' ? 'bg-red-500 text-white' : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400'}`}
+              >
+                Out of Stock ({products.filter(p => p.stock === 0).length})
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Summary Cards */}
+        <div className="px-4 py-3">
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl p-4 shadow-sm border border-gray-200 dark:border-gray-800">
+              <p className="text-sm text-gray-600 dark:text-gray-400">Total Items</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">{products.length}</p>
+            </div>
+            <div className="bg-white dark:bg-gray-900 rounded-2xl p-4 shadow-sm border border-gray-200 dark:border-gray-800">
+              <p className="text-sm text-gray-600 dark:text-gray-400">In Stock</p>
+              <p className="text-2xl font-bold text-green-600 dark:text-green-400">{products.filter(p => p.stock > 10).length}</p>
+            </div>
+            <div className="bg-white dark:bg-gray-900 rounded-2xl p-4 shadow-sm border border-gray-200 dark:border-gray-800">
+              <p className="text-sm text-gray-600 dark:text-gray-400">Low Stock</p>
+              <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">{products.filter(p => p.stock > 0 && p.stock <= 10).length}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Product List */}
+        <div className="px-4 pb-6">
           {filteredProducts.length === 0 ? (
-            <div className="w-full text-center py-12">
-              <Package className="w-16 h-16 text-gray-300 dark:text-gray-700 mx-auto mb-4" />
-              <p className="text-gray-500 dark:text-gray-400">{searchTerm ? 'No products found' : 'No products in auto inventory'}</p>
+            <div className="text-center py-16">
+              <div className="w-24 h-24 bg-gray-100 dark:bg-gray-900 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Package className="w-12 h-12 text-gray-400 dark:text-gray-600" />
+              </div>
+              <p className="text-gray-600 dark:text-gray-300 font-medium text-lg mb-2">
+                {searchTerm ? 'No products found' : 'No products in inventory'}
+              </p>
+              <p className="text-gray-500 dark:text-gray-500 text-sm mb-6">
+                {searchTerm ? 'Try a different search term' : 'Add products to get started'}
+              </p>
               {searchTerm && (
                 <button
                   onClick={() => setSearchTerm('')}
-                  className="mt-4 px-6 py-2 bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-white rounded-lg font-medium"
+                  className="px-6 py-3 bg-blue-500 hover:bg-blue-600 active:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 dark:active:bg-blue-800 text-white rounded-xl font-medium active:scale-[0.98] transition-all"
                 >
-                  Clear search
+                  Clear Search
                 </button>
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            <div className="space-y-3">
               {filteredProducts.map((product) => (
                 <div 
                   key={product.id}
-                  onClick={() => handleViewHistory(product)}
-                  className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden shadow-sm hover:shadow-lg hover:border-blue-500 dark:hover:border-blue-600 transition-all duration-300 flex flex-col cursor-pointer"
+                  className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden shadow-sm active:scale-[0.995] transition-transform"
                 >
-                  <div className="p-4 flex flex-col flex-grow">
-                    <h3 className="font-bold text-gray-900 dark:text-white truncate flex-grow">{product.productName}</h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">ID: {product.productId}</p>
+                  <div 
+                    className="p-4"
+                    onClick={() => handleViewHistory(product)}
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-bold text-gray-900 dark:text-white truncate text-base">
+                            {product.productName}
+                          </h3>
+                          <ChevronRight className="w-4 h-4 text-gray-400 dark:text-gray-600 flex-shrink-0" />
+                        </div>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 truncate">ID: {product.productId}</p>
+                        <div className="flex items-center gap-2 mt-2">
+                          <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${getStockStatusColor(product.stock)}`}>
+                            {getStockStatusText(product.stock)}
+                          </span>
+                          <span className="text-sm text-gray-500 dark:text-gray-500">
+                            {product.category}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                     
                     <div className="mt-4">
-                        <div className="flex justify-between items-center mb-1">
-                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Stock</span>
-                            <span className={`text-sm font-bold ${
-                                product.stock > 10 
-                                ? 'text-green-600 dark:text-green-400'
-                                : product.stock > 0
-                                ? 'text-orange-600 dark:text-orange-400'
-                                : 'text-red-600 dark:text-red-400'
-                            }`}>{product.stock.toFixed(2)} {product.unit}</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2 dark:bg-gray-700">
-                            <div className={`h-2 rounded-full ${
-                                product.stock > 10 
-                                ? 'bg-green-500'
-                                : product.stock > 0
-                                ? 'bg-orange-500'
-                                : 'bg-red-500'
-                            }`} style={{width: `${product.stock > 100 ? 100 : product.stock}%`}}></div>
-                        </div>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Current Stock</span>
+                        <span className={`text-lg font-bold ${
+                          product.stock === 0 
+                            ? 'text-red-600 dark:text-red-400'
+                            : product.stock <= 10
+                            ? 'text-orange-600 dark:text-orange-400'
+                            : 'text-green-600 dark:text-green-400'
+                        }`}>
+                          {product.stock.toFixed(2)} {product.unit}
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 dark:bg-gray-800 rounded-full h-2.5">
+                        <div className={`h-2.5 rounded-full ${
+                          product.stock === 0 
+                            ? 'bg-red-500'
+                            : product.stock <= 10
+                            ? 'bg-orange-500'
+                            : 'bg-green-500'
+                        }`} 
+                        style={{ 
+                          width: `${Math.min(100, (product.stock / (product.stock > 10 ? 100 : 10)) * 100)}%` 
+                        }}></div>
+                      </div>
                     </div>
-
-                    <div className="mt-4">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedProduct(product);
-                          setShowAdjustModal(true);
-                        }}
-                        className="w-full px-3 py-2 bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
-                      >
-                        Adjust Stock
-                      </button>
-                    </div>
+                  </div>
+                  
+                  <div className="border-t border-gray-100 dark:border-gray-800 p-3 flex gap-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleQuickAdjust(product, 'add');
+                      }}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-green-500 hover:bg-green-600 active:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700 dark:active:bg-green-800 text-white rounded-xl font-medium active:scale-[0.98] transition-all"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleQuickAdjust(product, 'reduce');
+                      }}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-red-500 hover:bg-red-600 active:bg-red-700 dark:bg-red-600 dark:hover:bg-red-700 dark:active:bg-red-800 text-white rounded-xl font-medium active:scale-[0.98] transition-all"
+                    >
+                      <Minus className="w-4 h-4" />
+                      Remove
+                    </button>
                   </div>
                 </div>
               ))}
@@ -303,210 +457,257 @@ const AutoInventoryPage: React.FC = () => {
           )}
         </div>
 
-        {/* Adjust Stock Modal - Mobile Style */}
+        {/* Adjust Stock Modal - Bottom Sheet */}
         {showAdjustModal && selectedProduct && (
-          <div className="fixed inset-0 bg-black/50 flex items-end md:items-center justify-center z-50" onClick={() => setShowAdjustModal(false)}>
-            <div className="bg-white dark:bg-gray-900 w-full md:max-w-md md:rounded-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-              {/* Header */}
-              <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-4 py-3 flex items-center gap-3">
-                <button
-                  onClick={() => {
-                    setShowAdjustModal(false);
-                    setSelectedProduct(null);
-                    setAdjustQuantity('');
-                    setAdjustNote('');
-                  }}
-                  className="p-2 text-gray-500 dark:text-gray-400"
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                <h2 className="text-lg font-bold text-gray-900 dark:text-white">Adjust Stock</h2>
+          <div className="fixed inset-0 z-50">
+            <div 
+              className="absolute inset-0 bg-black/50 dark:bg-black/70"
+              onClick={() => {
+                setShowAdjustModal(false);
+                setSelectedProduct(null);
+                setAdjustQuantity('');
+                setAdjustNote('');
+              }}
+            />
+            <div className="absolute bottom-0 left-0 right-0 bg-white dark:bg-gray-900 rounded-t-3xl max-h-[85vh] overflow-hidden border-t border-gray-200 dark:border-gray-800">
+              {/* Draggable Handle */}
+              <div className="pt-3 pb-1 flex justify-center">
+                <div className="w-12 h-1.5 bg-gray-300 dark:bg-gray-700 rounded-full"></div>
               </div>
-
-              <div className="p-4">
-                {/* Product Info */}
-                <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
-                  <div className="flex items-center gap-4">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-gray-900 dark:text-white truncate">{selectedProduct.productName}</h3>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">ID: {selectedProduct.productId}</p>
-                      <div className="mt-2">
-                        <span className={`px-3 py-1 rounded-lg text-sm font-bold ${
-                          selectedProduct.stock > 10 
-                            ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                            : selectedProduct.stock > 0
-                            ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400'
-                            : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                        }`}>
-                          {selectedProduct.stock.toFixed(2)} {selectedProduct.unit}
-                        </span>
-                      </div>
+              
+              <div className="overflow-y-auto max-h-[calc(85vh-40px)]">
+                <div className="p-6">
+                  {/* Header */}
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Adjust Stock</h2>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">ID: {selectedProduct.productId}</p>
                     </div>
-                  </div>
-                </div>
-
-                <div className="mb-4 border-b border-gray-200 dark:border-gray-700">
-                    <nav className="-mb-px flex gap-6" aria-label="Tabs">
-                        <button
-                            onClick={() => setAdjustType('add')}
-                            className={`${adjustType === 'add' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-                        >
-                            Add Stock
-                        </button>
-                        <button
-                            onClick={() => setAdjustType('reduce')}
-                            className={`${adjustType === 'reduce' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-                        >
-                            Reduce Stock
-                        </button>
-                    </nav>
-                </div>
-
-                <form onSubmit={handleAdjustStock} className="space-y-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Quantity
-                    </label>
-                    <div className="flex gap-3">
-                      <div className="flex-1 relative">
-                        <input
-                          type="number"
-                          step="0.001"
-                          value={adjustQuantity}
-                          onChange={(e) => setAdjustQuantity(e.target.value)}
-                          placeholder="e.g. 10"
-                          className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 text-gray-900 dark:text-white"
-                          required
-                        />
-                      </div>
-                      <div className="px-4 py-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium">
-                        {selectedProduct.unit}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Reason (Optional)
-                    </label>
-                    <textarea
-                      value={adjustNote}
-                      onChange={(e) => setAdjustNote(e.target.value)}
-                      placeholder="e.g. Stock correction, new shipment"
-                      rows={3}
-                      className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-500"
-                    />
-                  </div>
-
-                  <div className="flex gap-3 pt-2">
                     <button
-                      type="button"
                       onClick={() => {
                         setShowAdjustModal(false);
                         setSelectedProduct(null);
                         setAdjustQuantity('');
                         setAdjustNote('');
                       }}
-                      className="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                      className="p-2 text-gray-500 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-400"
                     >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="flex-1 px-4 py-3 bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-white rounded-xl font-medium transition-colors"
-                    >
-                      Update Stock
+                      <X className="w-6 h-6" />
                     </button>
                   </div>
-                </form>
+
+                  {/* Product Info */}
+                  <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-2xl border border-blue-200 dark:border-blue-800">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="font-bold text-gray-900 dark:text-white">{selectedProduct.productName}</h3>
+                        <div className="flex items-center gap-3 mt-2">
+                          <span className={`px-3 py-1.5 rounded-lg text-sm font-bold ${getStockStatusColor(selectedProduct.stock)}`}>
+                            {getStockStatusText(selectedProduct.stock)}
+                          </span>
+                          <span className="text-lg font-bold text-gray-900 dark:text-white">
+                            {selectedProduct.stock.toFixed(2)} {selectedProduct.unit}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Adjust Type Toggle */}
+                  <div className="mb-6">
+                    <div className="flex bg-gray-100 dark:bg-gray-800 rounded-2xl p-1">
+                      <button
+                        onClick={() => setAdjustType('add')}
+                        className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl font-medium transition-all ${adjustType === 'add' ? 'bg-green-500 text-white shadow-sm' : 'text-gray-600 dark:text-gray-400'}`}
+                      >
+                        <Plus className="w-5 h-5" />
+                        Add Stock
+                      </button>
+                      <button
+                        onClick={() => setAdjustType('reduce')}
+                        className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl font-medium transition-all ${adjustType === 'reduce' ? 'bg-red-500 text-white shadow-sm' : 'text-gray-600 dark:text-gray-400'}`}
+                      >
+                        <Minus className="w-5 h-5" />
+                        Reduce Stock
+                      </button>
+                    </div>
+                  </div>
+
+                  <form onSubmit={handleAdjustStock} className="space-y-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                        Quantity to {adjustType === 'add' ? 'Add' : 'Remove'}
+                      </label>
+                      <div className="flex gap-3">
+                        <div className="flex-1">
+                          <input
+                            ref={adjustInputRef}
+                            type="number"
+                            step="0.001"
+                            min="0.001"
+                            value={adjustQuantity}
+                            onChange={(e) => setAdjustQuantity(e.target.value)}
+                            placeholder="Enter quantity"
+                            className="w-full px-4 py-4 bg-gray-50 dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:border-blue-500 dark:focus:border-blue-600 text-gray-900 dark:text-white text-lg"
+                            required
+                          />
+                        </div>
+                        <div className="px-5 py-4 border-2 border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-medium">
+                          {selectedProduct.unit}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                        Reason (Optional)
+                      </label>
+                      <textarea
+                        value={adjustNote}
+                        onChange={(e) => setAdjustNote(e.target.value)}
+                        placeholder="e.g., Stock correction, new shipment, damaged goods"
+                        rows={3}
+                        className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:border-blue-500 dark:focus:border-blue-600 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-500"
+                      />
+                    </div>
+
+                    <div className="pt-4">
+                      <button
+                        type="submit"
+                        className="w-full py-4 bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-white rounded-xl font-bold text-lg shadow-sm active:scale-[0.99] transition-all"
+                      >
+                        {adjustType === 'add' ? 'Add to Stock' : 'Remove from Stock'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* Transaction History Modal - Mobile Style */}
+        {/* Transaction History Modal - Bottom Sheet */}
         {showHistoryModal && selectedProduct && (
-          <div className="fixed inset-0 bg-black/50 flex items-end md:items-center justify-center z-50" onClick={() => setShowHistoryModal(false)}>
-            <div className="bg-white dark:bg-gray-900 w-full md:max-w-lg md:rounded-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-              {/* Header */}
-              <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-4 py-3 flex items-center gap-3">
-                <button
-                  onClick={() => {
-                    setShowHistoryModal(false);
-                    setSelectedProduct(null);
-                    setProductTransactions([]);
-                  }}
-                  className="p-2 text-gray-500 dark:text-gray-400"
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                <div className="flex-1 min-w-0">
-                  <h2 className="text-lg font-bold text-gray-900 dark:text-white truncate">Transaction History</h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{selectedProduct.productName}</p>
-                </div>
+          <div className="fixed inset-0 z-50">
+            <div 
+              className="absolute inset-0 bg-black/50 dark:bg-black/70"
+              onClick={() => {
+                setShowHistoryModal(false);
+                setSelectedProduct(null);
+                setProductTransactions([]);
+              }}
+            />
+            <div className="absolute bottom-0 left-0 right-0 bg-white dark:bg-gray-900 rounded-t-3xl max-h-[90vh] overflow-hidden border-t border-gray-200 dark:border-gray-800">
+              {/* Draggable Handle */}
+              <div className="pt-3 pb-1 flex justify-center">
+                <div className="w-12 h-1.5 bg-gray-300 dark:bg-gray-700 rounded-full"></div>
               </div>
+              
+              <div className="overflow-y-auto max-h-[calc(90vh-40px)]">
+                <div className="p-6">
+                  {/* Header */}
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Transaction History</h2>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 truncate">{selectedProduct.productName}</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowHistoryModal(false);
+                        setSelectedProduct(null);
+                        setProductTransactions([]);
+                      }}
+                      className="p-2 text-gray-500 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-400"
+                    >
+                      <X className="w-6 h-6" />
+                    </button>
+                  </div>
 
-              <div className="p-4">
-                {loading ? (
-                  <div className="text-center py-8">
-                    <div className="w-12 h-12 border-4 border-gray-200 dark:border-gray-800 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
-                    <p className="text-gray-500 dark:text-gray-400">Loading transactions...</p>
+                  {/* Product Summary */}
+                  <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">Current Stock</p>
+                        <p className="text-2xl font-bold text-gray-900 dark:text-white">{selectedProduct.stock.toFixed(2)} {selectedProduct.unit}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">Total Transactions</p>
+                        <p className="text-2xl font-bold text-gray-900 dark:text-white">{productTransactions.length}</p>
+                      </div>
+                    </div>
                   </div>
-                ) : productTransactions.length === 0 ? (
-                  <div className="text-center py-8">
-                    <History className="w-12 h-12 text-gray-300 dark:text-gray-700 mx-auto mb-4" />
-                    <p className="text-gray-500 dark:text-gray-400">No transactions found</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {productTransactions.map((transaction) => (
-                      <div key={transaction.id} className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-200 dark:border-gray-800">
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex items-center gap-3">
-                            <div className={`p-2 rounded-lg ${transaction.quantityChange > 0 ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30'}`}>
-                              {transaction.quantityChange > 0 ? (
-                                <TrendingUp className="w-5 h-5 text-green-500 dark:text-green-400" />
-                              ) : (
-                                <TrendingDown className="w-5 h-5 text-red-500 dark:text-red-400" />
+
+                  {/* Transactions List */}
+                  <div>
+                    {loading ? (
+                      <div className="text-center py-12">
+                        <div className="w-14 h-14 border-4 border-gray-200 dark:border-gray-800 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
+                        <p className="text-gray-600 dark:text-gray-300 font-medium">Loading transactions...</p>
+                      </div>
+                    ) : productTransactions.length === 0 ? (
+                      <div className="text-center py-12">
+                        <History className="w-16 h-16 text-gray-400 dark:text-gray-700 mx-auto mb-4" />
+                        <p className="text-gray-600 dark:text-gray-300 font-medium">No transactions yet</p>
+                        <p className="text-gray-500 dark:text-gray-500 text-sm mt-1">Adjust stock to see history</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Recent Activity</h3>
+                        {productTransactions.map((transaction) => (
+                          <div 
+                            key={transaction.id} 
+                            className={`p-4 rounded-2xl border ${transaction.quantityChange > 0 ? 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20' : 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20'}`}
+                          >
+                            <div className="flex items-start justify-between mb-3">
+                              <div className="flex items-center gap-3">
+                                <div className={`p-2 rounded-xl ${transaction.quantityChange > 0 ? 'bg-green-100 dark:bg-green-900/40' : 'bg-red-100 dark:bg-red-900/40'}`}>
+                                  {transaction.quantityChange > 0 ? (
+                                    <TrendingUp className="w-5 h-5 text-green-600 dark:text-green-400" />
+                                  ) : (
+                                    <TrendingDown className="w-5 h-5 text-red-600 dark:text-red-400" />
+                                  )}
+                                </div>
+                                <div>
+                                  <span className="font-bold text-lg text-gray-900 dark:text-white">
+                                    {`${transaction.quantityChange > 0 ? '+' : ''}${Number(transaction.quantityChange).toFixed(2)} ${transaction.unit}`}
+                                  </span>
+                                  <p className="text-sm text-gray-600 dark:text-gray-400 capitalize mt-1">Via {transaction.source}</p>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="flex items-center gap-1 text-gray-600 dark:text-gray-400 text-sm">
+                                  <Calendar className="w-4 h-4" />
+                                  {new Date(transaction.createdAt).toLocaleDateString()}
+                                </div>
+                                <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                                  {new Date(transaction.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </p>
+                              </div>
+                            </div>
+                            
+                            {transaction.note && (
+                              <p className="text-sm text-gray-700 dark:text-gray-300 mb-3 p-3 bg-white dark:bg-black/30 rounded-lg">
+                                {transaction.note}
+                              </p>
+                            )}
+                            
+                            <div className="flex items-center justify-between text-sm">
+                              <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                                <User className="w-4 h-4" />
+                                <span>{transaction.performedBy || 'System'}</span>
+                              </div>
+                              {(transaction.quotationId || transaction.purchaseId) && (
+                                <span className="text-gray-500 dark:text-gray-500 text-xs bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
+                                  Ref: {transaction.quotationId || transaction.purchaseId}
+                                </span>
                               )}
                             </div>
-                            <div>
-                              <span className="font-bold text-lg text-gray-900 dark:text-white">
-                                {`${transaction.quantityChange > 0 ? '+' : ''}${Number(transaction.quantityChange).toFixed(2)} ${transaction.unit}`}
-                              </span>
-                              <p className="text-sm text-gray-500 dark:text-gray-400 capitalize">Via {transaction.source}</p>
-                            </div>
                           </div>
-                          <div className="text-right">
-                            <p className="text-sm text-gray-700 dark:text-gray-300 font-medium">
-                              {new Date(transaction.createdAt).toLocaleDateString()}
-                            </p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
-                              {new Date(transaction.createdAt).toLocaleTimeString()}
-                            </p>
-                          </div>
-                        </div>
-                        
-                        {transaction.note && (
-                          <p className="text-sm text-gray-700 dark:text-gray-300 mb-3 p-3 bg-white/50 dark:bg-gray-900/30 rounded-lg">
-                            {transaction.note}
-                          </p>
-                        )}
-                        
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-gray-600 dark:text-gray-400">
-                            By: {transaction.performedBy || 'System'}
-                          </span>
-                          {(transaction.quotationId || transaction.purchaseId) && (
-                            <span className="text-gray-600 dark:text-gray-400 text-xs">
-                              Ref: {transaction.quotationId || transaction.purchaseId}
-                            </span>
-                          )}
-                        </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
-                )}
+                </div>
               </div>
             </div>
           </div>
