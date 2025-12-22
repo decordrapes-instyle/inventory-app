@@ -26,7 +26,7 @@ interface Transaction {
   purchaseId?: string;
   note?: string;
   createdAt: number;
-  performedBy?: string;
+  cls?: string;
 }
 
 const ProductsPage: React.FC = () => {

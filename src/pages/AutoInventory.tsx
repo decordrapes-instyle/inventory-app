@@ -243,6 +243,12 @@ const AutoInventoryPage: React.FC = () => {
     return 'In Stock';
   };
 
+  const getStockColor = (stock: number) => {
+    if (stock === 0) return 'text-red-600 dark:text-red-400';
+    if (stock <= 10) return 'text-orange-600 dark:text-orange-400';
+    return 'text-green-600 dark:text-green-400';
+  };
+
   if (loading && products.length === 0) {
     return (
       <div className="min-h-screen bg-white dark:bg-black flex items-center justify-center p-4">
@@ -287,7 +293,6 @@ const AutoInventoryPage: React.FC = () => {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-12 pr-10 py-3.5 bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-800 focus:border-blue-500 dark:focus:border-blue-600 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-500 text-base"
-              // No autoFocus attribute - user must manually click to focus
             />
             {searchTerm && (
               <button
@@ -326,114 +331,106 @@ const AutoInventoryPage: React.FC = () => {
           </div>
         )}
 
-        {/* Summary Cards */}
+        {/* Summary Cards - Optimized for mobile */}
         <div className="px-4 py-3">
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-white dark:bg-gray-900 rounded-2xl p-4 shadow-sm border border-gray-200 dark:border-gray-800">
-              <p className="text-sm text-gray-600 dark:text-gray-400">Total Items</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">{products.length}</p>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-white dark:bg-gray-900 rounded-xl p-3 shadow-sm border border-gray-200 dark:border-gray-800">
+              <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Total Items</p>
+              <p className="text-lg font-bold text-gray-900 dark:text-white">{products.length}</p>
             </div>
-            <div className="bg-white dark:bg-gray-900 rounded-2xl p-4 shadow-sm border border-gray-200 dark:border-gray-800">
-              <p className="text-sm text-gray-600 dark:text-gray-400">In Stock</p>
-              <p className="text-2xl font-bold text-green-600 dark:text-green-400">{products.filter(p => p.stock > 10).length}</p>
+            <div className="bg-white dark:bg-gray-900 rounded-xl p-3 shadow-sm border border-gray-200 dark:border-gray-800">
+              <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">In Stock</p>
+              <p className="text-lg font-bold text-green-600 dark:text-green-400">{products.filter(p => p.stock > 10).length}</p>
             </div>
-            <div className="bg-white dark:bg-gray-900 rounded-2xl p-4 shadow-sm border border-gray-200 dark:border-gray-800">
-              <p className="text-sm text-gray-600 dark:text-gray-400">Low Stock</p>
-              <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">{products.filter(p => p.stock > 0 && p.stock <= 10).length}</p>
+            <div className="bg-white dark:bg-gray-900 rounded-xl p-3 shadow-sm border border-gray-200 dark:border-gray-800">
+              <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Low Stock</p>
+              <p className="text-lg font-bold text-orange-600 dark:text-orange-400">{products.filter(p => p.stock > 0 && p.stock <= 10).length}</p>
             </div>
           </div>
         </div>
 
-        {/* Product List */}
+        {/* Product List - Optimized for mobile */}
         <div className="px-4 pb-6">
           {filteredProducts.length === 0 ? (
-            <div className="text-center py-16">
-              <div className="w-24 h-24 bg-gray-100 dark:bg-gray-900 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Package className="w-12 h-12 text-gray-400 dark:text-gray-600" />
+            <div className="text-center py-12">
+              <div className="w-20 h-20 bg-gray-100 dark:bg-gray-900 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Package className="w-10 h-10 text-gray-400 dark:text-gray-600" />
               </div>
-              <p className="text-gray-600 dark:text-gray-300 font-medium text-lg mb-2">
+              <p className="text-gray-600 dark:text-gray-300 font-medium text-base mb-2">
                 {searchTerm ? 'No products found' : 'No products in inventory'}
               </p>
-              <p className="text-gray-500 dark:text-gray-500 text-sm mb-6">
+              <p className="text-gray-500 dark:text-gray-500 text-sm mb-4">
                 {searchTerm ? 'Try a different search term' : 'Add products to get started'}
               </p>
               {searchTerm && (
                 <button
                   onClick={() => setSearchTerm('')}
-                  className="px-6 py-3 bg-blue-500 hover:bg-blue-600 active:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 dark:active:bg-blue-800 text-white rounded-xl font-medium active:scale-[0.98] transition-all"
+                  className="px-5 py-2.5 bg-blue-500 hover:bg-blue-600 active:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 dark:active:bg-blue-800 text-white rounded-xl font-medium active:scale-[0.98] transition-all text-sm"
                 >
                   Clear Search
                 </button>
               )}
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {filteredProducts.map((product) => (
                 <div 
                   key={product.id}
-                  className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden shadow-sm active:scale-[0.995] transition-transform"
+                  className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden shadow-sm active:scale-[0.995] transition-transform"
                 >
+                  {/* Main Card Content */}
                   <div 
-                    className="p-4"
+                    className="p-3"
                     onClick={() => handleViewHistory(product)}
                   >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-bold text-gray-900 dark:text-white truncate text-base">
+                    {/* Top Row: Product Info and Stock */}
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex-1 min-w-0 pr-2">
+                        <div className="flex items-start gap-2 mb-1">
+                          <h3 className="font-semibold text-gray-900 dark:text-white text-sm line-clamp-1">
                             {product.productName}
                           </h3>
-                          <ChevronRight className="w-4 h-4 text-gray-400 dark:text-gray-600 flex-shrink-0" />
+                          <ChevronRight className="w-3 h-3 text-gray-400 dark:text-gray-600 flex-shrink-0 mt-1" />
                         </div>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 truncate">ID: {product.productId}</p>
-                        <div className="flex items-center gap-2 mt-2">
-                          <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${getStockStatusColor(product.stock)}`}>
-                            {getStockStatusText(product.stock)}
-                          </span>
-                          <span className="text-sm text-gray-500 dark:text-gray-500">
-                            {product.category}
-                          </span>
+                        <p className="text-xs text-gray-600 dark:text-gray-400 truncate mb-2">ID: {product.productId}</p>
+                        
+                        {/* Stock Status Badge */}
+                        <span className={`px-2 py-1 rounded-lg text-xs font-medium ${getStockStatusColor(product.stock)}`}>
+                          {getStockStatusText(product.stock)}
+                        </span>
+                      </div>
+                      
+                      {/* Stock Quantity - Large and Prominent */}
+                      <div className="text-right">
+                        <div className={`text-xl font-bold ${getStockColor(product.stock)}`}>
+                          {product.stock.toFixed(2)}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-500 mt-0.5">
+                          {product.unit}
                         </div>
                       </div>
                     </div>
                     
-                    <div className="mt-4">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Current Stock</span>
-                        <span className={`text-lg font-bold ${
-                          product.stock === 0 
-                            ? 'text-red-600 dark:text-red-400'
-                            : product.stock <= 10
-                            ? 'text-orange-600 dark:text-orange-400'
-                            : 'text-green-600 dark:text-green-400'
-                        }`}>
-                          {product.stock.toFixed(2)} {product.unit}
+                    {/* Category if available */}
+                    {product.category && (
+                      <div className="mt-2">
+                        <span className="text-xs text-gray-500 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
+                          {product.category}
                         </span>
                       </div>
-                      <div className="w-full bg-gray-200 dark:bg-gray-800 rounded-full h-2.5">
-                        <div className={`h-2.5 rounded-full ${
-                          product.stock === 0 
-                            ? 'bg-red-500'
-                            : product.stock <= 10
-                            ? 'bg-orange-500'
-                            : 'bg-green-500'
-                        }`} 
-                        style={{ 
-                          width: `${Math.min(100, (product.stock / (product.stock > 10 ? 100 : 10)) * 100)}%` 
-                        }}></div>
-                      </div>
-                    </div>
+                    )}
                   </div>
                   
-                  <div className="border-t border-gray-100 dark:border-gray-800 p-3 flex gap-2">
+                  {/* Action Buttons - Always visible */}
+                  <div className="border-t border-gray-100 dark:border-gray-800 p-2 flex gap-2">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         handleQuickAdjust(product, 'add');
                       }}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-green-500 hover:bg-green-600 active:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700 dark:active:bg-green-800 text-white rounded-xl font-medium active:scale-[0.98] transition-all"
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-green-500 hover:bg-green-600 active:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700 dark:active:bg-green-800 text-white rounded-lg font-medium active:scale-[0.98] transition-all text-sm"
                     >
-                      <Plus className="w-4 h-4" />
+                      <Plus className="w-3.5 h-3.5" />
                       Add
                     </button>
                     <button
@@ -441,9 +438,9 @@ const AutoInventoryPage: React.FC = () => {
                         e.stopPropagation();
                         handleQuickAdjust(product, 'reduce');
                       }}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-red-500 hover:bg-red-600 active:bg-red-700 dark:bg-red-600 dark:hover:bg-red-700 dark:active:bg-red-800 text-white rounded-xl font-medium active:scale-[0.98] transition-all"
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-red-500 hover:bg-red-600 active:bg-red-700 dark:bg-red-600 dark:hover:bg-red-700 dark:active:bg-red-800 text-white rounded-lg font-medium active:scale-[0.98] transition-all text-sm"
                     >
-                      <Minus className="w-4 h-4" />
+                      <Minus className="w-3.5 h-3.5" />
                       Remove
                     </button>
                   </div>
@@ -476,7 +473,7 @@ const AutoInventoryPage: React.FC = () => {
                   {/* Header */}
                   <div className="flex items-center justify-between mb-6">
                     <div>
-                      <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Adjust Stock</h2>
+                      <h2 className="text-xl font-bold text-gray-900 dark:text-white">Adjust Stock</h2>
                       <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">ID: {selectedProduct.productId}</p>
                     </div>
                     <button
@@ -604,7 +601,7 @@ const AutoInventoryPage: React.FC = () => {
                   {/* Header */}
                   <div className="flex items-center justify-between mb-6">
                     <div>
-                      <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Transaction History</h2>
+                      <h2 className="text-xl font-bold text-gray-900 dark:text-white">Transaction History</h2>
                       <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 truncate">{selectedProduct.productName}</p>
                     </div>
                     <button
@@ -624,11 +621,11 @@ const AutoInventoryPage: React.FC = () => {
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-sm text-gray-600 dark:text-gray-400">Current Stock</p>
-                        <p className="text-2xl font-bold text-gray-900 dark:text-white">{selectedProduct.stock.toFixed(2)} {selectedProduct.unit}</p>
+                        <p className="text-xl font-bold text-gray-900 dark:text-white">{selectedProduct.stock.toFixed(2)} {selectedProduct.unit}</p>
                       </div>
                       <div>
                         <p className="text-sm text-gray-600 dark:text-gray-400">Total Transactions</p>
-                        <p className="text-2xl font-bold text-gray-900 dark:text-white">{productTransactions.length}</p>
+                        <p className="text-xl font-bold text-gray-900 dark:text-white">{productTransactions.length}</p>
                       </div>
                     </div>
                   </div>
@@ -636,60 +633,60 @@ const AutoInventoryPage: React.FC = () => {
                   {/* Transactions List */}
                   <div>
                     {loading ? (
-                      <div className="text-center py-12">
-                        <div className="w-14 h-14 border-4 border-gray-200 dark:border-gray-800 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
+                      <div className="text-center py-8">
+                        <div className="w-12 h-12 border-4 border-gray-200 dark:border-gray-800 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
                         <p className="text-gray-600 dark:text-gray-300 font-medium">Loading transactions...</p>
                       </div>
                     ) : productTransactions.length === 0 ? (
-                      <div className="text-center py-12">
-                        <History className="w-16 h-16 text-gray-400 dark:text-gray-700 mx-auto mb-4" />
+                      <div className="text-center py-8">
+                        <History className="w-14 h-14 text-gray-400 dark:text-gray-700 mx-auto mb-4" />
                         <p className="text-gray-600 dark:text-gray-300 font-medium">No transactions yet</p>
                         <p className="text-gray-500 dark:text-gray-500 text-sm mt-1">Adjust stock to see history</p>
                       </div>
                     ) : (
-                      <div className="space-y-3">
-                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Recent Activity</h3>
+                      <div className="space-y-2">
+                        <h3 className="text-base font-bold text-gray-900 dark:text-white mb-3">Recent Activity</h3>
                         {productTransactions.map((transaction) => (
                           <div 
                             key={transaction.id} 
-                            className={`p-4 rounded-2xl border ${transaction.quantityChange > 0 ? 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20' : 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20'}`}
+                            className={`p-3 rounded-xl border ${transaction.quantityChange > 0 ? 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20' : 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20'}`}
                           >
-                            <div className="flex items-start justify-between mb-3">
-                              <div className="flex items-center gap-3">
-                                <div className={`p-2 rounded-xl ${transaction.quantityChange > 0 ? 'bg-green-100 dark:bg-green-900/40' : 'bg-red-100 dark:bg-red-900/40'}`}>
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <div className={`p-1.5 rounded-lg ${transaction.quantityChange > 0 ? 'bg-green-100 dark:bg-green-900/40' : 'bg-red-100 dark:bg-red-900/40'}`}>
                                   {transaction.quantityChange > 0 ? (
-                                    <TrendingUp className="w-5 h-5 text-green-600 dark:text-green-400" />
+                                    <TrendingUp className="w-4 h-4 text-green-600 dark:text-green-400" />
                                   ) : (
-                                    <TrendingDown className="w-5 h-5 text-red-600 dark:text-red-400" />
+                                    <TrendingDown className="w-4 h-4 text-red-600 dark:text-red-400" />
                                   )}
                                 </div>
                                 <div>
-                                  <span className="font-bold text-lg text-gray-900 dark:text-white">
+                                  <span className="font-bold text-base text-gray-900 dark:text-white">
                                     {`${transaction.quantityChange > 0 ? '+' : ''}${Number(transaction.quantityChange).toFixed(2)} ${transaction.unit}`}
                                   </span>
-                                  <p className="text-sm text-gray-600 dark:text-gray-400 capitalize mt-1">Via {transaction.source}</p>
+                                  <p className="text-xs text-gray-600 dark:text-gray-400 capitalize mt-0.5">Via {transaction.source}</p>
                                 </div>
                               </div>
                               <div className="text-right">
-                                <div className="flex items-center gap-1 text-gray-600 dark:text-gray-400 text-sm">
-                                  <Calendar className="w-4 h-4" />
+                                <div className="flex items-center gap-1 text-gray-600 dark:text-gray-400 text-xs">
+                                  <Calendar className="w-3 h-3" />
                                   {new Date(transaction.createdAt).toLocaleDateString()}
                                 </div>
-                                <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                                <p className="text-xs text-gray-500 dark:text-gray-500 mt-0.5">
                                   {new Date(transaction.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                 </p>
                               </div>
                             </div>
                             
                             {transaction.note && (
-                              <p className="text-sm text-gray-700 dark:text-gray-300 mb-3 p-3 bg-white dark:bg-black/30 rounded-lg">
+                              <p className="text-xs text-gray-700 dark:text-gray-300 mb-2 p-2 bg-white dark:bg-black/30 rounded-lg">
                                 {transaction.note}
                               </p>
                             )}
                             
-                            <div className="flex items-center justify-between text-sm">
-                              <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                                <User className="w-4 h-4" />
+                            <div className="flex items-center justify-between text-xs">
+                              <div className="flex items-center gap-1 text-gray-600 dark:text-gray-400">
+                                <User className="w-3 h-3" />
                                 <span>{transaction.performedBy || 'System'}</span>
                               </div>
                               {(transaction.quotationId || transaction.purchaseId) && (
