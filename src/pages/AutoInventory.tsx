@@ -47,7 +47,7 @@ interface InventoryGroup {
     productName: string;
     unit: InventoryUnit;
     addedAt: number;
-    inventoryType: 'product' | 'manual'; // Updated to include type
+    inventoryType: 'product' | 'manual';
   }>;
   createdAt: number;
   updatedAt: number;
@@ -74,19 +74,58 @@ const AutoInventoryPage: React.FC = () => {
   const headerRef = useRef<HTMLDivElement>(null);
   const groupFilterRef = useRef<HTMLDivElement>(null);
   const stockFilterRef = useRef<HTMLDivElement>(null);
-  const [headerHeight, setHeaderHeight] = useState(56);
+  const [headerHeight, setHeaderHeight] = useState(72);
   const [showHeader, setShowHeader] = useState(true);
   const [showSearchInput, setShowSearchInput] = useState(false);
   const [showGroupFilter, setShowGroupFilter] = useState(false);
   const [showStockFilter, setShowStockFilter] = useState(false);
   const lastScrollY = useRef(0);
 
-  // Measure header height
+
+  // Add this custom hook at the top of your component (before the InventoryPage function)
+const useSafeAreaHeight = () => {
+  const [safeAreaHeight, setSafeAreaHeight] = useState(0);
+
   useEffect(() => {
+    const calculateSafeArea = () => {
+      // Create a test element to measure safe area
+      const testEl = document.createElement('div');
+      testEl.style.position = 'fixed';
+      testEl.style.top = '0';
+      testEl.style.left = '0';
+      testEl.style.width = '0';
+      testEl.style.height = '0';
+      testEl.style.paddingTop = 'env(safe-area-inset-top)';
+      testEl.style.visibility = 'hidden';
+      document.body.appendChild(testEl);
+      
+      const computedStyle = window.getComputedStyle(testEl);
+      const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
+      
+      document.body.removeChild(testEl);
+      return paddingTop;
+    };
+
+    // Calculate after mount
+    const timer = setTimeout(() => {
+      const height = calculateSafeArea();
+      setSafeAreaHeight(height);
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  return safeAreaHeight;
+};
+
+// Then in your InventoryPage component, add:
+const safeAreaHeight = useSafeAreaHeight();
+
+useEffect(() => {
     const updateHeaderHeight = () => {
       if (headerRef.current) {
         const height = headerRef.current.getBoundingClientRect().height;
-        setHeaderHeight(height);
+        setHeaderHeight(height+8);
       }
     };
 
@@ -98,8 +137,10 @@ const AutoInventoryPage: React.FC = () => {
     }
     
     return () => observer.disconnect();
-  }, [showSearchInput, showGroupFilter, showStockFilter, stockFilter, searchTerm, selectedGroup]);
-
+  }, [ showSearchInput, showGroupFilter, showStockFilter, stockFilter, searchTerm, selectedGroup]);
+;
+  // Measure header height
+  
   // Handle scroll to hide/show header
   useEffect(() => {
     const handleScroll = () => {
@@ -128,6 +169,8 @@ const AutoInventoryPage: React.FC = () => {
   // Fetch products and groups
   useEffect(() => {
     setLoading(true);
+    setShowSearchInput(true);
+    setShowSearchInput(false);
     
     const productsRef = ref(database, 'quotations/inventory');
     const groupsRef = ref(database, 'quotations/inventoryGrp');
@@ -167,9 +210,7 @@ const AutoInventoryPage: React.FC = () => {
           })
         );
         
-        // Filter groups to only include those with at least one item of inventoryType "product"
         const filteredGroups = groupsList.filter(group => {
-          // Check if group has items and at least one has inventoryType "product"
           if (!group.items || !Array.isArray(group.items)) return false;
           
           return group.items.some(item => item.inventoryType === "product");
@@ -201,7 +242,6 @@ const AutoInventoryPage: React.FC = () => {
     }
   }, [showAdjustModal]);
 
-  // Handle body overflow for modals
   useEffect(() => {
     if (showHistoryModal || showAdjustModal || showGroupFilter || showStockFilter) {
       document.body.style.overflow = 'hidden';
@@ -213,7 +253,6 @@ const AutoInventoryPage: React.FC = () => {
     };
   }, [showHistoryModal, showAdjustModal, showGroupFilter, showStockFilter]);
 
-  // Close filters when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -236,7 +275,6 @@ const AutoInventoryPage: React.FC = () => {
     };
   }, []);
 
-  // Toggle search input
   const toggleSearch = () => {
     setShowSearchInput(!showSearchInput);
     setShowGroupFilter(false);
@@ -355,12 +393,9 @@ const AutoInventoryPage: React.FC = () => {
     setShowAdjustModal(true);
   };
 
-  // Get products for selected group - only include items with inventoryType "product"
   const getGroupProducts = (groupId: string): Product[] => {
     const group = inventoryGroups.find((g) => g.id === groupId);
     if (!group) return [];
-
-    // Filter items to only include those with inventoryType "product"
     const productItems = group.items.filter(item => item.inventoryType === "product");
     const groupProductIds = new Set(productItems.map((item) => item.productId));
     
@@ -446,20 +481,20 @@ const AutoInventoryPage: React.FC = () => {
         }}
       />
       
-      <div className="pt-safe min-h-screen bg-gray-50 dark:bg-black text-gray-900 dark:text-white pb-16">
+      <div className="min-h-screen bg-gray-50 dark:bg-black text-gray-900 dark:text-white pb-16">
         {/* HEADER */}
         <div
           ref={headerRef}
           className={`
-            fixed top-0 left-0 right-0 z-20
+            fixed top-0 left-0 right-0 z-20 pt-safe
             bg-white/90 dark:bg-black/90 backdrop-blur-sm
             border-b border-gray-200 dark:border-gray-900
-            transition-transform duration-300 ease-in-out pt-safe
+            transition-transform duration-300 ease-in-out
             ${showHeader ? "translate-y-0" : "-translate-y-full"}
           `}
         >
           {/* TOP BAR */}
-          <div className="flex items-center justify-between h-14 px-4 pt-safe">
+          <div className="flex items-center justify-between h-14 px-4">
             <div className="flex items-center gap-3">
               <button
                 onClick={() => navigate(-1)}
@@ -712,7 +747,9 @@ const AutoInventoryPage: React.FC = () => {
         {/* Main Content */}
         <div 
           className="p-4 transition-[padding-top] duration-300 ease-in-out"
-          style={{ paddingTop: `${headerHeight + 8}px` }}
+          style={{ 
+            paddingTop: `${Math.max(headerHeight, safeAreaHeight > 0 ? safeAreaHeight + 64 : 72)}px`
+          }}
         >
           {/* Stats Cards */}
           <div className="grid grid-cols-2 gap-3 mb-4">

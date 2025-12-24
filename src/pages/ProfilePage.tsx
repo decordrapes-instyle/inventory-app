@@ -129,13 +129,12 @@ const ProfilePage: React.FC = () => {
     navigate("/login");
   };
 
-  // Initial sync check on component mount
   React.useEffect(() => {
     checkSyncStatus();
   }, []);
 
   return (
-    <div className="pt-3 min-h-screen bg-white dark:bg-black pb-4">
+    <div className="pt-3 min-h-screen bg-white dark:bg-black pb-24">
       {/* Header */}
       <div className="pt-safe flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-900">
         <div className="flex items-center gap-3">

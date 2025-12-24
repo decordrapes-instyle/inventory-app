@@ -138,7 +138,7 @@ class ImageCache {
 const InventoryPage: React.FC = () => {
   const { user } = useAuth();
   const headerRef = useRef<HTMLDivElement>(null);
-  const [headerHeight, setHeaderHeight] = useState(56); // Base height
+  const [headerHeight, setHeaderHeight] = useState(72);
   const [products, setProducts] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -167,24 +167,110 @@ const InventoryPage: React.FC = () => {
   const [showSearchInput, setShowSearchInput] = useState(false);
   const lastScrollY = useRef(0);
 
-  // Measure header height
+  // Add this custom hook at the top of your component (before the InventoryPage function)
+  const useSafeAreaHeight = () => {
+    const [safeAreaHeight, setSafeAreaHeight] = useState(0);
+
+    useEffect(() => {
+      const calculateSafeArea = () => {
+        // Create a test element to measure safe area
+        const testEl = document.createElement("div");
+        testEl.style.position = "fixed";
+        testEl.style.top = "0";
+        testEl.style.left = "0";
+        testEl.style.width = "0";
+        testEl.style.height = "0";
+        testEl.style.paddingTop = "env(safe-area-inset-top)";
+        testEl.style.visibility = "hidden";
+        document.body.appendChild(testEl);
+
+        const computedStyle = window.getComputedStyle(testEl);
+        const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
+
+        document.body.removeChild(testEl);
+        return paddingTop;
+      };
+
+      // Calculate after mount
+      const timer = setTimeout(() => {
+        const height = calculateSafeArea();
+        setSafeAreaHeight(height);
+      }, 100);
+
+      return () => clearTimeout(timer);
+    }, []);
+
+    return safeAreaHeight;
+  };
+
+  // Then in your InventoryPage component, add:
+  const safeAreaHeight = useSafeAreaHeight();
+
+  // Update the header measurement useEffect to account for safe area:
+  // Replace the useEffect for measuring header height with this improved version:
+
+  // Measure header height with proper support for pt-safe in APK
   useEffect(() => {
+    let mounted = true;
+    let observer: ResizeObserver | null = null;
+
     const updateHeaderHeight = () => {
-      if (headerRef.current) {
-        const height = headerRef.current.getBoundingClientRect().height;
-        setHeaderHeight(height);
-      }
+      if (!mounted || !headerRef.current) return;
+
+      const height = headerRef.current.getBoundingClientRect().height;
+      // Add extra padding for spacing
+      const calculatedHeight = Math.max(height + 8, 80); // Minimum 80px
+      setHeaderHeight(calculatedHeight);
     };
 
-    updateHeaderHeight();
-    
-    const observer = new ResizeObserver(updateHeaderHeight);
+    // Initial measurement
     if (headerRef.current) {
+      updateHeaderHeight();
+    }
+
+    // Multiple attempts to account for APK timing issues
+    const attempts = [0, 50, 100, 200, 500];
+    attempts.forEach((delay) => {
+      setTimeout(updateHeaderHeight, delay);
+    });
+
+    // Use ResizeObserver for dynamic changes
+    if (headerRef.current) {
+      observer = new ResizeObserver(updateHeaderHeight);
       observer.observe(headerRef.current);
     }
+
+    // Also update on window resize
+    window.addEventListener("resize", updateHeaderHeight);
+
+    return () => {
+      mounted = false;
+      if (observer) {
+        observer.disconnect();
+      }
+      window.removeEventListener("resize", updateHeaderHeight);
+    };
+  }, [
     
-    return () => observer.disconnect();
-  }, [showGroupFilter, showStockFilter, showSearchInput, selectedGroup, stockFilter, searchTerm]);
+    showGroupFilter,
+    showStockFilter,
+    showSearchInput,
+    selectedGroup,
+    stockFilter,
+    searchTerm,
+    showHeader,
+  ]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (headerRef.current) {
+        const height = headerRef.current.getBoundingClientRect().height;
+        setHeaderHeight(height + 8);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, []);
 
   // Handle scroll to hide/show header
   useEffect(() => {
@@ -192,7 +278,8 @@ const InventoryPage: React.FC = () => {
       const currentScrollY = window.scrollY;
 
       // Don't hide header if any filter is expanded
-      const isFilterExpanded = showGroupFilter || showStockFilter || showSearchInput;
+      const isFilterExpanded =
+        showGroupFilter || showStockFilter || showSearchInput;
       if (isFilterExpanded) {
         setShowHeader(true);
         return;
@@ -265,6 +352,8 @@ const InventoryPage: React.FC = () => {
   const fetchProducts = async (forceRefresh = false) => {
     try {
       setLoading(true);
+      setShowSearchInput(true);
+      setShowSearchInput(false);
 
       // Fetch products
       const productsRef = ref(database, "quotations/manualInventory");
@@ -282,7 +371,7 @@ const InventoryPage: React.FC = () => {
         }));
 
         // Store item count in localStorage for sync checking
-        localStorage.setItem('inventory_items', JSON.stringify(productsList));
+        localStorage.setItem("inventory_items", JSON.stringify(productsList));
 
         // Cache images for products that have them
         productsList.forEach((product) => {
@@ -306,7 +395,7 @@ const InventoryPage: React.FC = () => {
         setProducts(productsList);
       } else {
         setProducts([]);
-        localStorage.setItem('inventory_items', JSON.stringify([]));
+        localStorage.setItem("inventory_items", JSON.stringify([]));
       }
 
       if (groupsSnapshot.exists()) {
@@ -317,15 +406,17 @@ const InventoryPage: React.FC = () => {
             ...value,
           }))
           // Filter groups to only include those with manual inventory items
-          .filter((group: InventoryGroup) => 
-            group.items.some(item => item.inventoryType === "manual")
+          .filter((group: InventoryGroup) =>
+            group.items.some((item) => item.inventoryType === "manual")
           )
           // Also filter each group's items to only include manual items
           .map((group: InventoryGroup) => ({
             ...group,
-            items: group.items.filter(item => item.inventoryType === "manual")
+            items: group.items.filter(
+              (item) => item.inventoryType === "manual"
+            ),
           }));
-        
+
         setInventoryGroups(groupsList);
       } else {
         setInventoryGroups([]);
@@ -340,7 +431,6 @@ const InventoryPage: React.FC = () => {
       setRefreshing(false);
     }
   };
-  
 
   // Fetch products and groups on mount
   useEffect(() => {
@@ -589,7 +679,6 @@ const InventoryPage: React.FC = () => {
     }
   };
 
-
   // Skeleton Loading
   const ProductSkeleton = () => (
     <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden animate-pulse">
@@ -630,20 +719,20 @@ const InventoryPage: React.FC = () => {
         }}
       />
 
-      <div className="pt-safe min-h-screen bg-gray-50 dark:bg-black text-gray-900 dark:text-white pb-24">
+      <div className="min-h-screen bg-gray-50 dark:bg-black text-gray-900 dark:text-white pb-24">
         {/* HEADER */}
         <div
           ref={headerRef}
           className={`
-            fixed top-0 left-0 right-0 z-20
+            fixed top-0 left-0 right-0 z-20 pt-safe
             bg-white/90 dark:bg-black/90 backdrop-blur-sm
             border-b border-gray-200 dark:border-gray-900
-            transition-transform duration-300 ease-in-out pt-safe
+            transition-transform duration-300 ease-in-out
             ${showHeader ? "translate-y-0" : "-translate-y-full"}
           `}
         >
           {/* TOP BAR (always one line) */}
-          <div className="flex items-center justify-between h-14 px-4 pt-safe">
+          <div className="flex items-center justify-between h-14 px-4">
             <div className="flex items-center gap-2 min-w-0">
               {/* LOGO */}
               <img
@@ -700,7 +789,6 @@ const InventoryPage: React.FC = () => {
             </div>
           </div>
 
-
           {/* SEARCH INPUT ROW - Hidden by default */}
           {showSearchInput && (
             <div className="px-4 pb-3">
@@ -755,7 +843,9 @@ const InventoryPage: React.FC = () => {
                         : "bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-800"
                     }`}
                   >
-                    <span className="font-medium truncate block">{group.name}</span>
+                    <span className="font-medium truncate block">
+                      {group.name}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -816,13 +906,15 @@ const InventoryPage: React.FC = () => {
                 <span className="text-xs text-gray-500 dark:text-gray-400 font-medium shrink-0">
                   Filters:
                 </span>
-                
+
                 {/* SEARCH CHIP */}
                 {searchTerm && (
                   <div className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs shrink-0">
                     <Search className="w-3.5 h-3.5" />
-                    <span className="max-w-[120px] truncate">"{searchTerm}"</span>
-                    <button 
+                    <span className="max-w-[120px] truncate">
+                      "{searchTerm}"
+                    </span>
+                    <button
                       onClick={() => setSearchTerm("")}
                       className="ml-1 p-0.5 rounded-full hover:bg-blue-200 dark:hover:bg-blue-800/50"
                     >
@@ -836,9 +928,12 @@ const InventoryPage: React.FC = () => {
                   <div className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs shrink-0">
                     <Layers className="w-3.5 h-3.5" />
                     <span className="max-w-[120px] truncate">
-                      {inventoryGroups.find((g) => g.id === selectedGroup)?.name}
+                      {
+                        inventoryGroups.find((g) => g.id === selectedGroup)
+                          ?.name
+                      }
                     </span>
-                    <button 
+                    <button
                       onClick={() => setSelectedGroup(null)}
                       className="ml-1 p-0.5 rounded-full hover:bg-purple-200 dark:hover:bg-purple-800/50"
                     >
@@ -860,11 +955,11 @@ const InventoryPage: React.FC = () => {
                     <span>
                       {stockFilter === "low" ? "Low Stock" : "Out of Stock"}
                     </span>
-                    <button 
+                    <button
                       onClick={() => setStockFilter("all")}
                       className={`ml-1 p-0.5 rounded-full ${
-                        stockFilter === "low" 
-                          ? "hover:bg-orange-200 dark:hover:bg-orange-800/50" 
+                        stockFilter === "low"
+                          ? "hover:bg-orange-200 dark:hover:bg-orange-800/50"
                           : "hover:bg-red-200 dark:hover:bg-red-800/50"
                       }`}
                     >
@@ -874,7 +969,10 @@ const InventoryPage: React.FC = () => {
                 )}
 
                 {/* CLEAR ALL - Only show if more than one filter */}
-                {(searchTerm ? 1 : 0) + (selectedGroup ? 1 : 0) + (stockFilter !== "all" ? 1 : 0) > 1 && (
+                {(searchTerm ? 1 : 0) +
+                  (selectedGroup ? 1 : 0) +
+                  (stockFilter !== "all" ? 1 : 0) >
+                  1 && (
                   <button
                     onClick={() => {
                       setSearchTerm("");
@@ -892,9 +990,11 @@ const InventoryPage: React.FC = () => {
         </div>
 
         {/* Products List - Two Column Grid with dynamic padding AND GAP */}
-        <div 
+        <div
           className="p-4 transition-[padding-top] duration-300 ease-in-out"
-          style={{ paddingTop: `${headerHeight + 8}px` }}
+          style={{ 
+            paddingTop: `${Math.max(headerHeight, safeAreaHeight > 0 ? safeAreaHeight + 64 : 72)}px`
+          }}
         >
           {filteredProducts.length === 0 ? (
             <div className="text-center py-16">
@@ -912,27 +1012,28 @@ const InventoryPage: React.FC = () => {
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-4"> {/* Increased gap from 3 to 4 */}
+            <div className="grid grid-cols-2 gap-4">
+              {" "}
+              {/* Increased gap from 3 to 4 */}
               {filteredProducts.map((product) => {
                 const imageUrl = getImageUrl(product);
                 return (
                   <div
                     key={product.id}
-                    className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow duration-200"
+                    onClick={() => handleViewHistory(product)} // CARD CLICK → HISTORY
+                    className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow duration-200 cursor-pointer"
                   >
-                    {/* Product Image Square with Caching */}
+                    {/* Product Image */}
                     <div
-                      onClick={(e) => handleImageClick(product, e)}
-                      className="w-full aspect-square bg-gray-100 dark:bg-gray-800 relative cursor-pointer overflow-hidden"
+                      onClick={(e) => handleImageClick(product, e)} // IMAGE CLICK → IMAGE
+                      className="w-full aspect-square bg-gray-100 dark:bg-gray-800 relative overflow-hidden"
                     >
                       {imageUrl ? (
                         <>
-                          {/* Skeleton while loading */}
                           {!imageLoaded[product.id] && (
                             <div className="absolute inset-0 bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
                           )}
 
-                          {/* Actual Image - Using cached URL if available */}
                           <img
                             src={imageUrl}
                             alt={product.productName}
@@ -946,7 +1047,6 @@ const InventoryPage: React.FC = () => {
                             crossOrigin="anonymous"
                           />
 
-                          {/* Image overlay icon */}
                           <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors flex items-center justify-center">
                             <ImageIcon className="w-5 h-5 text-white opacity-0 hover:opacity-100 transition-opacity" />
                           </div>
@@ -959,7 +1059,7 @@ const InventoryPage: React.FC = () => {
                     </div>
 
                     {/* Product Info */}
-                    <div className="p-4 flex-1 flex flex-col"> {/* Increased padding from 3 to 4 */}
+                    <div className="p-4 flex-1 flex flex-col">
                       <h3 className="font-semibold text-sm mb-1 line-clamp-2 min-h-[2.5rem]">
                         {product.productName}
                       </h3>
@@ -968,7 +1068,7 @@ const InventoryPage: React.FC = () => {
                         Code: {product.productId}
                       </p>
 
-                      {/* Stock Display */}
+                      {/* Stock */}
                       <div className="mt-auto">
                         <div className="flex items-center justify-between mb-4">
                           <span className="text-xs text-gray-500 dark:text-gray-400">
@@ -987,30 +1087,18 @@ const InventoryPage: React.FC = () => {
                           </span>
                         </div>
 
-                        {/* Adjust and History Buttons */}
-                        <div className="flex gap-2">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedProduct(product);
-                              setShowAdjustModal(true);
-                            }}
-                            className="flex-1 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-medium active:scale-95 transition-all duration-200 flex items-center justify-center gap-1.5"
-                          >
-                            <Edit className="w-3.5 h-3.5" />
-                            Adjust
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleViewHistory(product);
-                            }}
-                            className="flex-1 py-2.5 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-xs font-medium active:scale-95 transition-all duration-200 flex items-center justify-center gap-1.5"
-                          >
-                            <History className="w-3.5 h-3.5" />
-                            History
-                          </button>
-                        </div>
+                        {/* Adjust Button ONLY */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation(); // ⛔ prevent history click
+                            setSelectedProduct(product);
+                            setShowAdjustModal(true);
+                          }}
+                          className="w-full py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-medium active:scale-95 transition-all duration-200 flex items-center justify-center gap-1.5"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                          Adjust
+                        </button>
                       </div>
                     </div>
                   </div>
