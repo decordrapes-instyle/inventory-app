@@ -12,12 +12,12 @@ import {
   Minus,
   X,
   Check,
-  RefreshCw,
-  AlertCircle,
   Clock,
   User,
   Image as ImageIcon,
   Edit,
+  Filter,
+  Layers,
 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 
@@ -67,9 +67,24 @@ interface Transaction {
   performedBy?: string;
 }
 
+interface InventoryGroup {
+  id: string;
+  name: string;
+  description?: string;
+  items: Array<{
+    productId: string;
+    productName: string;
+    unit: InventoryUnit;
+    addedAt: number;
+    inventoryType: "product" | "manual";
+  }>;
+  createdAt: number;
+  updatedAt: number;
+}
+
 // Image caching utility
 class ImageCache {
-  private static cacheKey = 'inventory_image_cache';
+  private static cacheKey = "inventory_image_cache";
   private static maxAge = 24 * 60 * 60 * 1000; // 24 hours
 
   static getCache(): Record<string, { url: string; timestamp: number }> {
@@ -85,14 +100,14 @@ class ImageCache {
     try {
       localStorage.setItem(this.cacheKey, JSON.stringify(cache));
     } catch (error) {
-      console.warn('Failed to cache images:', error);
+      console.warn("Failed to cache images:", error);
     }
   }
 
   static getCachedUrl(productId: string, currentUrl?: string): string | null {
     const cache = this.getCache();
     const cached = cache[productId];
-    
+
     if (cached && currentUrl && cached.url === currentUrl) {
       // Check if cache is still valid (less than 24 hours old)
       if (Date.now() - cached.timestamp < this.maxAge) {
@@ -106,7 +121,7 @@ class ImageCache {
     const cache = this.getCache();
     cache[productId] = {
       url,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     };
     this.setCache(cache);
   }
@@ -115,88 +130,258 @@ class ImageCache {
     try {
       localStorage.removeItem(this.cacheKey);
     } catch (error) {
-      console.warn('Failed to clear image cache:', error);
+      console.warn("Failed to clear image cache:", error);
     }
   }
 }
 
 const InventoryPage: React.FC = () => {
   const { user } = useAuth();
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [headerHeight, setHeaderHeight] = useState(56); // Base height
   const [products, setProducts] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showAdjustModal, setShowAdjustModal] = useState(false);
   const [showImageModal, setShowImageModal] = useState(false);
-  const [productTransactions, setProductTransactions] = useState<Transaction[]>([]);
+  const [productTransactions, setProductTransactions] = useState<Transaction[]>(
+    []
+  );
+  const [_refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [adjustQuantity, setAdjustQuantity] = useState("");
   const [adjustNote, setAdjustNote] = useState("");
   const [adjustType, setAdjustType] = useState<"add" | "reduce">("add");
-  const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<"all" | "low" | "out">("all");
   const [imageLoaded, setImageLoaded] = useState<Record<string, boolean>>({});
   const [cachedImages, setCachedImages] = useState<Record<string, string>>({});
+  const [inventoryGroups, setInventoryGroups] = useState<InventoryGroup[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
+  const [showGroupFilter, setShowGroupFilter] = useState(false);
+  const [showStockFilter, setShowStockFilter] = useState(false);
+  const [stockFilter, setStockFilter] = useState<"all" | "low" | "out">("all");
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const groupFilterRef = useRef<HTMLDivElement>(null);
+  const stockFilterRef = useRef<HTMLDivElement>(null);
+  const [showHeader, setShowHeader] = useState(true);
+  const [showSearchInput, setShowSearchInput] = useState(false);
+  const lastScrollY = useRef(0);
 
-  // Fetch products from Firebase - only once on mount
+  // Measure header height
+  useEffect(() => {
+    const updateHeaderHeight = () => {
+      if (headerRef.current) {
+        const height = headerRef.current.getBoundingClientRect().height;
+        setHeaderHeight(height);
+      }
+    };
+
+    updateHeaderHeight();
+    
+    const observer = new ResizeObserver(updateHeaderHeight);
+    if (headerRef.current) {
+      observer.observe(headerRef.current);
+    }
+    
+    return () => observer.disconnect();
+  }, [showGroupFilter, showStockFilter, showSearchInput, selectedGroup, stockFilter, searchTerm]);
+
+  // Handle scroll to hide/show header
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+
+      // Don't hide header if any filter is expanded
+      const isFilterExpanded = showGroupFilter || showStockFilter || showSearchInput;
+      if (isFilterExpanded) {
+        setShowHeader(true);
+        return;
+      }
+
+      if (currentScrollY < lastScrollY.current) {
+        setShowHeader(true);
+      } else if (currentScrollY > lastScrollY.current + 10) {
+        setShowHeader(false);
+      }
+
+      lastScrollY.current = currentScrollY;
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [showGroupFilter, showStockFilter, showSearchInput]);
+
+  // Handle back button for modals
+  useEffect(() => {
+    const handlePopState = () => {
+      if (showHistoryModal) {
+        setShowHistoryModal(false);
+        setSelectedProduct(null);
+        setProductTransactions([]);
+      } else if (showAdjustModal) {
+        setShowAdjustModal(false);
+        setSelectedProduct(null);
+        setAdjustQuantity("");
+        setAdjustNote("");
+      } else if (showImageModal) {
+        setShowImageModal(false);
+        setSelectedProduct(null);
+      } else if (showGroupFilter) {
+        setShowGroupFilter(false);
+      } else if (showStockFilter) {
+        setShowStockFilter(false);
+      } else if (showSearchInput) {
+        setShowSearchInput(false);
+      }
+    };
+
+    // Push state when modals open
+    if (
+      showHistoryModal ||
+      showAdjustModal ||
+      showImageModal ||
+      showGroupFilter ||
+      showStockFilter ||
+      showSearchInput
+    ) {
+      window.history.pushState({ modalOpen: true }, "");
+    }
+
+    window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [
+    showHistoryModal,
+    showAdjustModal,
+    showImageModal,
+    showGroupFilter,
+    showStockFilter,
+    showSearchInput,
+  ]);
+
+  // Fetch products and groups from Firebase
   const fetchProducts = async (forceRefresh = false) => {
     try {
       setLoading(true);
-      const productsRef = ref(database, "quotations/manualInventory");
-      const snapshot = await get(productsRef);
 
-      if (snapshot.exists()) {
-        const data = snapshot.val();
+      // Fetch products
+      const productsRef = ref(database, "quotations/manualInventory");
+      const productsSnapshot = await get(productsRef);
+
+      // Fetch inventory groups
+      const groupsRef = ref(database, "quotations/inventoryGrp");
+      const groupsSnapshot = await get(groupsRef);
+
+      if (productsSnapshot.exists()) {
+        const data = productsSnapshot.val();
         const productsList = Object.entries(data).map(([key, value]: any) => ({
           id: key,
           ...value,
         }));
-        
+
+        // Store item count in localStorage for sync checking
+        localStorage.setItem('inventory_items', JSON.stringify(productsList));
+
         // Cache images for products that have them
-        productsList.forEach(product => {
+        productsList.forEach((product) => {
           if (product.imageUrl && !forceRefresh) {
-            const cachedUrl = ImageCache.getCachedUrl(product.id, product.imageUrl);
+            const cachedUrl = ImageCache.getCachedUrl(
+              product.id,
+              product.imageUrl
+            );
             if (cachedUrl) {
-              setCachedImages(prev => ({ ...prev, [product.id]: cachedUrl }));
+              setCachedImages((prev) => ({ ...prev, [product.id]: cachedUrl }));
             } else if (product.imageUrl) {
               ImageCache.cacheImage(product.id, product.imageUrl);
-              setCachedImages(prev => ({ ...prev, [product.id]: product.imageUrl }));
+              setCachedImages((prev) => ({
+                ...prev,
+                [product.id]: product.imageUrl,
+              }));
             }
           }
         });
-        
+
         setProducts(productsList);
       } else {
         setProducts([]);
+        localStorage.setItem('inventory_items', JSON.stringify([]));
+      }
+
+      if (groupsSnapshot.exists()) {
+        const groupsData = groupsSnapshot.val();
+        const groupsList = Object.entries(groupsData)
+          .map(([key, value]: any) => ({
+            id: key,
+            ...value,
+          }))
+          // Filter groups to only include those with manual inventory items
+          .filter((group: InventoryGroup) => 
+            group.items.some(item => item.inventoryType === "manual")
+          )
+          // Also filter each group's items to only include manual items
+          .map((group: InventoryGroup) => ({
+            ...group,
+            items: group.items.filter(item => item.inventoryType === "manual")
+          }));
+        
+        setInventoryGroups(groupsList);
+      } else {
+        setInventoryGroups([]);
       }
     } catch (err: any) {
-      console.error("Error loading products:", err);
+      console.error("Error loading inventory:", err);
       toast.error("Failed to load inventory");
       setProducts([]);
+      setInventoryGroups([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
+  
 
-  // Fetch products only once on mount
+  // Fetch products and groups on mount
   useEffect(() => {
     fetchProducts();
-    // Cleanup function
+
     return () => {
-      // Reset states if component unmounts
       setProducts([]);
       setCachedImages({});
+      setInventoryGroups([]);
     };
   }, []);
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    // Force refresh from database
-    await fetchProducts(true);
-    toast.success("Refreshed");
-  };
+  // Close filters when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        groupFilterRef.current &&
+        !groupFilterRef.current.contains(event.target as Node)
+      ) {
+        setShowGroupFilter(false);
+      }
+      if (
+        stockFilterRef.current &&
+        !stockFilterRef.current.contains(event.target as Node)
+      ) {
+        setShowStockFilter(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  // Focus search input when opened
+  useEffect(() => {
+    if (showSearchInput && searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  }, [showSearchInput]);
 
   const handleAdjustStock = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -236,11 +421,9 @@ const InventoryPage: React.FC = () => {
       const currentStock = currentProduct.stock || 0;
       const newStock = currentStock + quantityChange;
       const userNameInfo = user
-        ? user.displayName ||user.email || user.uid
+        ? user.displayName || user.email || user.uid
         : "Naam nhi hai";
-      const userInfo = user
-        ? user.email || user.uid
-        : "User";
+      const userInfo = user ? user.email || user.uid : "User";
       const finalNote = adjustNote
         ? `${adjustNote} (${userInfo})`
         : `${quantityChange > 0 ? "Added" : "Removed"} by ${userNameInfo}`;
@@ -337,18 +520,34 @@ const InventoryPage: React.FC = () => {
     setImageLoaded((prev) => ({ ...prev, [productId]: true }));
   };
 
-  // Filter products based on active tab - NO API CALL, just client-side filtering
-  const getFilteredProducts = () => {
-    let filtered = products.filter(
-      (p) =>
-        p.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.productId.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+  // Get products for selected group - ONLY include items with inventoryType "manual"
+  const getGroupProducts = (groupId: string): Product[] => {
+    const group = inventoryGroups.find((g) => g.id === groupId);
+    if (!group) return [];
 
-    if (activeTab === "low") {
+    // Group items are already filtered to only manual items in fetchProducts
+    const groupProductIds = new Set(group.items.map((item) => item.productId));
+    return products.filter((product) => groupProductIds.has(product.productId));
+  };
+
+  // Filter products based on selected group and search term
+  const getFilteredProducts = () => {
+    let filtered = selectedGroup ? getGroupProducts(selectedGroup) : products;
+
+    // Apply stock filter
+    if (stockFilter === "low") {
       filtered = filtered.filter((p) => p.stock > 0 && p.stock <= 10);
-    } else if (activeTab === "out") {
+    } else if (stockFilter === "out") {
       filtered = filtered.filter((p) => p.stock === 0);
+    }
+
+    // Apply search term
+    if (searchTerm) {
+      filtered = filtered.filter(
+        (p) =>
+          p.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          p.productId.toLowerCase().includes(searchTerm.toLowerCase())
+      );
     }
 
     return filtered;
@@ -356,16 +555,15 @@ const InventoryPage: React.FC = () => {
 
   const filteredProducts = getFilteredProducts();
 
-  // Stats - calculated from cached products
-  const totalProducts = products.length;
-  const lowStockCount = products.filter(
-    (p) => p.stock > 0 && p.stock <= 10
-  ).length;
-  const outOfStockCount = products.filter((p) => p.stock === 0).length;
-
   // Handle body overflow for modals
   useEffect(() => {
-    if (showHistoryModal || showAdjustModal || showImageModal) {
+    if (
+      showHistoryModal ||
+      showAdjustModal ||
+      showImageModal ||
+      showGroupFilter ||
+      showStockFilter
+    ) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "auto";
@@ -373,7 +571,24 @@ const InventoryPage: React.FC = () => {
     return () => {
       document.body.style.overflow = "auto";
     };
-  }, [showHistoryModal, showAdjustModal, showImageModal]);
+  }, [
+    showHistoryModal,
+    showAdjustModal,
+    showImageModal,
+    showGroupFilter,
+    showStockFilter,
+  ]);
+
+  // Toggle search input
+  const toggleSearch = () => {
+    setShowSearchInput(!showSearchInput);
+    setShowGroupFilter(false);
+    setShowStockFilter(false);
+    if (!showSearchInput && searchTerm) {
+      setSearchTerm("");
+    }
+  };
+
 
   // Skeleton Loading
   const ProductSkeleton = () => (
@@ -415,89 +630,272 @@ const InventoryPage: React.FC = () => {
         }}
       />
 
-      <div className="pt-safe min-h-screen bg-gray-50 dark:bg-black text-gray-900 dark:text-white pb-20">
-        {/* Header */}
-        <div className="sticky top-0 z-20 bg-white/80 dark:bg-black/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-900 px-4 py-3">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h1 className="text-xl font-bold">Inventory</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                {totalProducts} products
-              </p>
-            </div>
-            <button
-              onClick={handleRefresh}
-              className="p-2 bg-gray-100 dark:bg-gray-900 rounded-lg"
-              disabled={refreshing}
-            >
-              <RefreshCw
-                className={`w-5 h-5 text-gray-600 dark:text-gray-400 ${
-                  refreshing ? "animate-spin" : ""
-                }`}
+      <div className="pt-safe min-h-screen bg-gray-50 dark:bg-black text-gray-900 dark:text-white pb-24">
+        {/* HEADER */}
+        <div
+          ref={headerRef}
+          className={`
+            fixed top-0 left-0 right-0 z-20
+            bg-white/90 dark:bg-black/90 backdrop-blur-sm
+            border-b border-gray-200 dark:border-gray-900
+            transition-transform duration-300 ease-in-out pt-safe
+            ${showHeader ? "translate-y-0" : "-translate-y-full"}
+          `}
+        >
+          {/* TOP BAR (always one line) */}
+          <div className="flex items-center justify-between h-14 px-4 pt-safe">
+            <div className="flex items-center gap-2 min-w-0">
+              {/* LOGO */}
+              <img
+                src="https://res.cloudinary.com/dmiwq3l2s/image/upload/v1764768203/vfw82jmca7zl5p86czhy.png"
+                alt="Company Logo"
+                className="w-7 h-7 rounded object-contain"
               />
-            </button>
-          </div>
 
-          {/* Search Bar */}
-          <div className="relative mb-3">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 dark:text-gray-500" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              placeholder="Search products..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 bg-gray-100 dark:bg-gray-900 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
-            />
-            {searchTerm && (
+              <h1 className="text-lg font-bold truncate">Inventory</h1>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {/* SEARCH ICON */}
               <button
-                onClick={() => setSearchTerm("")}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1"
+                onClick={toggleSearch}
+                className={`p-2 rounded-lg transition-colors ${
+                  searchTerm || showSearchInput ? "text-white" : ""
+                }`}
               >
-                <X className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+                <Search className="w-5 h-5" />
               </button>
-            )}
+
+              {/* GROUP ICON */}
+              <button
+                onClick={() => {
+                  setShowGroupFilter(!showGroupFilter);
+                  setShowStockFilter(false);
+                  setShowSearchInput(false);
+                }}
+                className={`p-2 rounded-lg transition-colors ${
+                  selectedGroup || showGroupFilter
+                    ? "bg-purple-500 text-white"
+                    : ""
+                }`}
+              >
+                <Layers className="w-5 h-5" />
+              </button>
+
+              {/* STOCK ICON */}
+              <button
+                onClick={() => {
+                  setShowStockFilter(!showStockFilter);
+                  setShowGroupFilter(false);
+                  setShowSearchInput(false);
+                }}
+                className={`p-2 rounded-lg transition-colors ${
+                  stockFilter !== "all" || showStockFilter
+                    ? "bg-orange-500 text-white"
+                    : ""
+                }`}
+              >
+                <Filter className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
-          {/* Tabs - No API calls on tab switch */}
-          <div className="flex bg-gray-100 dark:bg-gray-900 p-1 rounded-xl">
-            <button
-              onClick={() => setActiveTab("all")}
-              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                activeTab === "all"
-                  ? "bg-blue-500 text-white"
-                  : "text-gray-600 dark:text-gray-400"
-              }`}
-            >
-              All ({totalProducts})
-            </button>
-            <button
-              onClick={() => setActiveTab("low")}
-              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-                activeTab === "low"
-                  ? "bg-orange-500 text-white"
-                  : "text-gray-600 dark:text-gray-400"
-              }`}
-            >
-              <AlertCircle className="w-4 h-4" />
-              Low ({lowStockCount})
-            </button>
-            <button
-              onClick={() => setActiveTab("out")}
-              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-                activeTab === "out"
-                  ? "bg-red-500 text-white"
-                  : "text-gray-600 dark:text-gray-400"
-              }`}
-            >
-              <AlertCircle className="w-4 h-4" />
-              Out ({outOfStockCount})
-            </button>
-          </div>
+
+          {/* SEARCH INPUT ROW - Hidden by default */}
+          {showSearchInput && (
+            <div className="px-4 pb-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  ref={searchInputRef}
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search products by name or code..."
+                  className="w-full pl-10 pr-10 py-3 rounded-xl bg-gray-100 dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 border-0"
+                />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full bg-gray-200 dark:bg-gray-800"
+                  >
+                    <X className="w-4 h-4 text-gray-500" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* GROUP FILTER ROW - Grid layout */}
+          {showGroupFilter && (
+            <div className="px-4 pb-3" ref={groupFilterRef}>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => {
+                    setSelectedGroup(null);
+                    setShowGroupFilter(false);
+                  }}
+                  className={`py-3 px-3 rounded-xl text-left transition-all duration-200 ${
+                    !selectedGroup
+                      ? "bg-purple-500 text-white shadow-md"
+                      : "bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-800"
+                  }`}
+                >
+                  <span className="font-medium">All Groups</span>
+                </button>
+                {inventoryGroups.map((group) => (
+                  <button
+                    key={group.id}
+                    onClick={() => {
+                      setSelectedGroup(group.id);
+                      setShowGroupFilter(false);
+                    }}
+                    className={`py-3 px-3 rounded-xl text-left transition-all duration-200 ${
+                      selectedGroup === group.id
+                        ? "bg-purple-500 text-white shadow-md"
+                        : "bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-800"
+                    }`}
+                  >
+                    <span className="font-medium truncate block">{group.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* STOCK FILTER ROW - Grid layout */}
+          {showStockFilter && (
+            <div className="px-4 pb-3" ref={stockFilterRef}>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => {
+                    setStockFilter("all");
+                    setShowStockFilter(false);
+                  }}
+                  className={`py-3 px-2 rounded-xl text-center transition-all duration-200 ${
+                    stockFilter === "all"
+                      ? "bg-orange-500 text-white shadow-md"
+                      : "bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-800"
+                  }`}
+                >
+                  <span className="font-medium text-sm">All</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setStockFilter("low");
+                    setShowStockFilter(false);
+                  }}
+                  className={`py-3 px-2 rounded-xl text-center transition-all duration-200 ${
+                    stockFilter === "low"
+                      ? "bg-orange-500 text-white shadow-md"
+                      : "bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-800"
+                  }`}
+                >
+                  <span className="font-medium text-sm">Low Stock</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setStockFilter("out");
+                    setShowStockFilter(false);
+                  }}
+                  className={`py-3 px-2 rounded-xl text-center transition-all duration-200 ${
+                    stockFilter === "out"
+                      ? "bg-orange-500 text-white shadow-md"
+                      : "bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-800"
+                  }`}
+                >
+                  <span className="font-medium text-sm">Out of Stock</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* APPLIED FILTERS ROW - Always shows when filters are active */}
+          {(searchTerm || selectedGroup || stockFilter !== "all") && (
+            <div className="px-4 pb-3 border-t border-gray-100 dark:border-gray-800 pt-3">
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                <span className="text-xs text-gray-500 dark:text-gray-400 font-medium shrink-0">
+                  Filters:
+                </span>
+                
+                {/* SEARCH CHIP */}
+                {searchTerm && (
+                  <div className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs shrink-0">
+                    <Search className="w-3.5 h-3.5" />
+                    <span className="max-w-[120px] truncate">"{searchTerm}"</span>
+                    <button 
+                      onClick={() => setSearchTerm("")}
+                      className="ml-1 p-0.5 rounded-full hover:bg-blue-200 dark:hover:bg-blue-800/50"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+
+                {/* GROUP CHIP */}
+                {selectedGroup && (
+                  <div className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs shrink-0">
+                    <Layers className="w-3.5 h-3.5" />
+                    <span className="max-w-[120px] truncate">
+                      {inventoryGroups.find((g) => g.id === selectedGroup)?.name}
+                    </span>
+                    <button 
+                      onClick={() => setSelectedGroup(null)}
+                      className="ml-1 p-0.5 rounded-full hover:bg-purple-200 dark:hover:bg-purple-800/50"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+
+                {/* STOCK CHIP */}
+                {stockFilter !== "all" && (
+                  <div
+                    className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs shrink-0 ${
+                      stockFilter === "low"
+                        ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300"
+                        : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                    }`}
+                  >
+                    <Filter className="w-3.5 h-3.5" />
+                    <span>
+                      {stockFilter === "low" ? "Low Stock" : "Out of Stock"}
+                    </span>
+                    <button 
+                      onClick={() => setStockFilter("all")}
+                      className={`ml-1 p-0.5 rounded-full ${
+                        stockFilter === "low" 
+                          ? "hover:bg-orange-200 dark:hover:bg-orange-800/50" 
+                          : "hover:bg-red-200 dark:hover:bg-red-800/50"
+                      }`}
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+
+                {/* CLEAR ALL - Only show if more than one filter */}
+                {(searchTerm ? 1 : 0) + (selectedGroup ? 1 : 0) + (stockFilter !== "all" ? 1 : 0) > 1 && (
+                  <button
+                    onClick={() => {
+                      setSearchTerm("");
+                      setSelectedGroup(null);
+                      setStockFilter("all");
+                    }}
+                    className="ml-auto text-xs text-gray-500 dark:text-gray-400 px-2 py-1.5 shrink-0 hover:text-gray-700 dark:hover:text-gray-300"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Products List - Two Column Grid */}
-        <div className="p-3">
+        {/* Products List - Two Column Grid with dynamic padding AND GAP */}
+        <div 
+          className="p-4 transition-[padding-top] duration-300 ease-in-out"
+          style={{ paddingTop: `${headerHeight + 8}px` }}
+        >
           {filteredProducts.length === 0 ? (
             <div className="text-center py-16">
               <Package className="w-16 h-16 text-gray-300 dark:text-gray-800 mx-auto mb-4" />
@@ -507,20 +905,20 @@ const InventoryPage: React.FC = () => {
               {searchTerm && (
                 <button
                   onClick={() => setSearchTerm("")}
-                  className="mt-4 px-6 py-2 bg-blue-500 text-white rounded-lg font-medium"
+                  className="mt-4 px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors"
                 >
                   Clear Search
                 </button>
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-4"> {/* Increased gap from 3 to 4 */}
               {filteredProducts.map((product) => {
                 const imageUrl = getImageUrl(product);
                 return (
                   <div
                     key={product.id}
-                    className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col"
+                    className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow duration-200"
                   >
                     {/* Product Image Square with Caching */}
                     <div
@@ -533,19 +931,21 @@ const InventoryPage: React.FC = () => {
                           {!imageLoaded[product.id] && (
                             <div className="absolute inset-0 bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
                           )}
-                          
+
                           {/* Actual Image - Using cached URL if available */}
                           <img
                             src={imageUrl}
                             alt={product.productName}
                             className={`w-full h-full object-cover ${
-                              imageLoaded[product.id] ? 'opacity-100' : 'opacity-0'
+                              imageLoaded[product.id]
+                                ? "opacity-100"
+                                : "opacity-0"
                             } transition-opacity duration-300`}
                             onLoad={() => handleImageLoad(product.id)}
                             loading="lazy"
                             crossOrigin="anonymous"
                           />
-                          
+
                           {/* Image overlay icon */}
                           <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors flex items-center justify-center">
                             <ImageIcon className="w-5 h-5 text-white opacity-0 hover:opacity-100 transition-opacity" />
@@ -559,18 +959,18 @@ const InventoryPage: React.FC = () => {
                     </div>
 
                     {/* Product Info */}
-                    <div className="p-3 flex-1 flex flex-col">
+                    <div className="p-4 flex-1 flex flex-col"> {/* Increased padding from 3 to 4 */}
                       <h3 className="font-semibold text-sm mb-1 line-clamp-2 min-h-[2.5rem]">
                         {product.productName}
                       </h3>
-                      
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
                         Code: {product.productId}
                       </p>
 
                       {/* Stock Display */}
                       <div className="mt-auto">
-                        <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center justify-between mb-4">
                           <span className="text-xs text-gray-500 dark:text-gray-400">
                             Stock
                           </span>
@@ -595,9 +995,9 @@ const InventoryPage: React.FC = () => {
                               setSelectedProduct(product);
                               setShowAdjustModal(true);
                             }}
-                            className="flex-1 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-medium active:scale-95 transition-transform flex items-center justify-center gap-1"
+                            className="flex-1 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-medium active:scale-95 transition-all duration-200 flex items-center justify-center gap-1.5"
                           >
-                            <Edit className="w-3 h-3" />
+                            <Edit className="w-3.5 h-3.5" />
                             Adjust
                           </button>
                           <button
@@ -605,9 +1005,9 @@ const InventoryPage: React.FC = () => {
                               e.stopPropagation();
                               handleViewHistory(product);
                             }}
-                            className="flex-1 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-xs font-medium active:scale-95 transition-transform flex items-center justify-center gap-1"
+                            className="flex-1 py-2.5 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-xs font-medium active:scale-95 transition-all duration-200 flex items-center justify-center gap-1.5"
                           >
-                            <History className="w-3 h-3" />
+                            <History className="w-3.5 h-3.5" />
                             History
                           </button>
                         </div>
@@ -628,6 +1028,7 @@ const InventoryPage: React.FC = () => {
               className="absolute inset-0 bg-black/90 dark:bg-black/90"
               onClick={() => {
                 setShowImageModal(false);
+                setSelectedProduct(null);
               }}
             />
 
@@ -645,6 +1046,7 @@ const InventoryPage: React.FC = () => {
             <button
               onClick={() => {
                 setShowImageModal(false);
+                setSelectedProduct(null);
               }}
               className="absolute bottom-8 left-1/2 transform -translate-x-1/2 bg-white/90 hover:bg-white text-black font-medium py-3 px-8 rounded-full active:scale-95 transition-transform"
             >
