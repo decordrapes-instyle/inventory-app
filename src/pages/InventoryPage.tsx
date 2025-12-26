@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { ref, push, set, get, update } from "firebase/database";
 import { database } from "../config/firebase";
@@ -135,6 +135,41 @@ class ImageCache {
   }
 }
 
+const useSafeAreaHeight = () => {
+  const [safeAreaHeight, setSafeAreaHeight] = useState(0);
+
+  useEffect(() => {
+    const calculateSafeArea = () => {
+      // Create a test element to measure safe area
+      const testEl = document.createElement("div");
+      testEl.style.position = "fixed";
+      testEl.style.top = "0";
+      testEl.style.left = "0";
+      testEl.style.width = "0";
+      testEl.style.height = "0";
+      testEl.style.paddingTop = "env(safe-area-inset-top)";
+      testEl.style.visibility = "hidden";
+      document.body.appendChild(testEl);
+
+      const computedStyle = window.getComputedStyle(testEl);
+      const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
+
+      document.body.removeChild(testEl);
+      return paddingTop;
+    };
+
+    // Calculate after mount
+    const timer = setTimeout(() => {
+      const height = calculateSafeArea();
+      setSafeAreaHeight(height);
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  return safeAreaHeight;
+};
+
 const InventoryPage: React.FC = () => {
   const { user } = useAuth();
   const headerRef = useRef<HTMLDivElement>(null);
@@ -166,120 +201,63 @@ const InventoryPage: React.FC = () => {
   const [showHeader, setShowHeader] = useState(true);
   const [showSearchInput, setShowSearchInput] = useState(false);
   const lastScrollY = useRef(0);
+  const bodyOverflowRef = useRef("");
 
-  // Add this custom hook at the top of your component (before the InventoryPage function)
-  const useSafeAreaHeight = () => {
-    const [safeAreaHeight, setSafeAreaHeight] = useState(0);
-
-    useEffect(() => {
-      const calculateSafeArea = () => {
-        // Create a test element to measure safe area
-        const testEl = document.createElement("div");
-        testEl.style.position = "fixed";
-        testEl.style.top = "0";
-        testEl.style.left = "0";
-        testEl.style.width = "0";
-        testEl.style.height = "0";
-        testEl.style.paddingTop = "env(safe-area-inset-top)";
-        testEl.style.visibility = "hidden";
-        document.body.appendChild(testEl);
-
-        const computedStyle = window.getComputedStyle(testEl);
-        const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
-
-        document.body.removeChild(testEl);
-        return paddingTop;
-      };
-
-      // Calculate after mount
-      const timer = setTimeout(() => {
-        const height = calculateSafeArea();
-        setSafeAreaHeight(height);
-      }, 100);
-
-      return () => clearTimeout(timer);
-    }, []);
-
-    return safeAreaHeight;
-  };
-
-  // Then in your InventoryPage component, add:
   const safeAreaHeight = useSafeAreaHeight();
 
-  // Update the header measurement useEffect to account for safe area:
-  // Replace the useEffect for measuring header height with this improved version:
-
-  // Measure header height with proper support for pt-safe in APK
+  // Optimized header height measurement
   useEffect(() => {
-    let mounted = true;
-    let observer: ResizeObserver | null = null;
-
+    if (!headerRef.current) return;
+    
     const updateHeaderHeight = () => {
-      if (!mounted || !headerRef.current) return;
-
-      const height = headerRef.current.getBoundingClientRect().height;
+      if (!headerRef.current) return;
+      const height = headerRef.current.getBoundingClientRect().height || 72;
       // Add extra padding for spacing
       const calculatedHeight = Math.max(height + 8, 80); // Minimum 80px
       setHeaderHeight(calculatedHeight);
     };
 
-    // Initial measurement
-    if (headerRef.current) {
-      updateHeaderHeight();
-    }
+    // Debounced update
+    let timeoutId: NodeJS.Timeout;
+    const debouncedUpdate = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(updateHeaderHeight, 100);
+    };
 
-    // Multiple attempts to account for APK timing issues
-    const attempts = [0, 50, 100, 200, 500];
-    attempts.forEach((delay) => {
-      setTimeout(updateHeaderHeight, delay);
+    // Initial measurement with delay for images
+    const initialTimeout = setTimeout(updateHeaderHeight, 300);
+
+    // Use ResizeObserver but throttle it
+    const observer = new ResizeObserver(() => {
+      debouncedUpdate();
     });
 
-    // Use ResizeObserver for dynamic changes
     if (headerRef.current) {
-      observer = new ResizeObserver(updateHeaderHeight);
       observer.observe(headerRef.current);
     }
 
-    // Also update on window resize
-    window.addEventListener("resize", updateHeaderHeight);
-
-    return () => {
-      mounted = false;
-      if (observer) {
-        observer.disconnect();
-      }
-      window.removeEventListener("resize", updateHeaderHeight);
+    // Also update on window resize (throttled)
+    const handleResize = () => {
+      debouncedUpdate();
     };
-  }, [
     
-    showGroupFilter,
-    showStockFilter,
-    showSearchInput,
-    selectedGroup,
-    stockFilter,
-    searchTerm,
-    showHeader,
-  ]);
+    window.addEventListener("resize", handleResize);
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (headerRef.current) {
-        const height = headerRef.current.getBoundingClientRect().height;
-        setHeaderHeight(height + 8);
-      }
-    }, 300);
-
-    return () => clearTimeout(timer);
+    // Cleanup
+    return () => {
+      clearTimeout(initialTimeout);
+      clearTimeout(timeoutId);
+      observer.disconnect();
+      window.removeEventListener("resize", handleResize);
+    };
   }, []);
 
-  // Handle scroll to hide/show header
+  // Throttled scroll handler
   useEffect(() => {
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
-
-      // Don't hide header if any filter is expanded
-      const isFilterExpanded =
-        showGroupFilter || showStockFilter || showSearchInput;
+      const isFilterExpanded = showGroupFilter || showStockFilter || showSearchInput;
+      
       if (isFilterExpanded) {
         setShowHeader(true);
         return;
@@ -287,15 +265,27 @@ const InventoryPage: React.FC = () => {
 
       if (currentScrollY < lastScrollY.current) {
         setShowHeader(true);
-      } else if (currentScrollY > lastScrollY.current + 10) {
+      } else if (currentScrollY > lastScrollY.current + 30) {
         setShowHeader(false);
       }
 
       lastScrollY.current = currentScrollY;
     };
 
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
+    // Throttle using requestAnimationFrame
+    let ticking = false;
+    const throttledScroll = () => {
+      if (!ticking) {
+        requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+
+    window.addEventListener("scroll", throttledScroll, { passive: true });
+    return () => window.removeEventListener("scroll", throttledScroll);
   }, [showGroupFilter, showStockFilter, showSearchInput]);
 
   // Handle back button for modals
@@ -352,8 +342,6 @@ const InventoryPage: React.FC = () => {
   const fetchProducts = async (forceRefresh = false) => {
     try {
       setLoading(true);
-      setShowSearchInput(true);
-      setShowSearchInput(false);
 
       // Fetch products
       const productsRef = ref(database, "quotations/manualInventory");
@@ -472,6 +460,28 @@ const InventoryPage: React.FC = () => {
       searchInputRef.current.focus();
     }
   }, [showSearchInput]);
+
+  // Optimized body overflow handling
+  useEffect(() => {
+    const modalOpen = showHistoryModal || showAdjustModal || showImageModal || 
+                     showGroupFilter || showStockFilter;
+    
+    if (modalOpen && bodyOverflowRef.current !== "hidden") {
+      bodyOverflowRef.current = "hidden";
+      document.body.style.overflow = "hidden";
+    } else if (!modalOpen && bodyOverflowRef.current !== "auto") {
+      bodyOverflowRef.current = "auto";
+      document.body.style.overflow = "auto";
+    }
+    
+    return () => {
+      // Only reset if component unmounts
+      if (bodyOverflowRef.current === "hidden") {
+        document.body.style.overflow = "auto";
+        bodyOverflowRef.current = "auto";
+      }
+    };
+  }, [showHistoryModal, showAdjustModal, showImageModal, showGroupFilter, showStockFilter]);
 
   const handleAdjustStock = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -610,18 +620,33 @@ const InventoryPage: React.FC = () => {
     setImageLoaded((prev) => ({ ...prev, [productId]: true }));
   };
 
+  const handleImageError = (productId: string, e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.target as HTMLImageElement;
+    img.style.display = 'none';
+    
+    // Clear from cache if error
+    const cache = ImageCache.getCache();
+    delete cache[productId];
+    ImageCache.setCache(cache);
+    setCachedImages(prev => {
+      const newCache = { ...prev };
+      delete newCache[productId];
+      return newCache;
+    });
+  };
+
   // Get products for selected group - ONLY include items with inventoryType "manual"
-  const getGroupProducts = (groupId: string): Product[] => {
+  const getGroupProducts = useCallback((groupId: string): Product[] => {
     const group = inventoryGroups.find((g) => g.id === groupId);
     if (!group) return [];
 
     // Group items are already filtered to only manual items in fetchProducts
     const groupProductIds = new Set(group.items.map((item) => item.productId));
     return products.filter((product) => groupProductIds.has(product.productId));
-  };
+  }, [inventoryGroups, products]);
 
-  // Filter products based on selected group and search term
-  const getFilteredProducts = () => {
+  // Memoized filtered products for better performance
+  const filteredProducts = useMemo(() => {
     let filtered = selectedGroup ? getGroupProducts(selectedGroup) : products;
 
     // Apply stock filter
@@ -633,41 +658,16 @@ const InventoryPage: React.FC = () => {
 
     // Apply search term
     if (searchTerm) {
+      const lowerSearchTerm = searchTerm.toLowerCase();
       filtered = filtered.filter(
         (p) =>
-          p.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          p.productId.toLowerCase().includes(searchTerm.toLowerCase())
+          p.productName.toLowerCase().includes(lowerSearchTerm) ||
+          p.productId.toLowerCase().includes(lowerSearchTerm)
       );
     }
 
     return filtered;
-  };
-
-  const filteredProducts = getFilteredProducts();
-
-  // Handle body overflow for modals
-  useEffect(() => {
-    if (
-      showHistoryModal ||
-      showAdjustModal ||
-      showImageModal ||
-      showGroupFilter ||
-      showStockFilter
-    ) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "auto";
-    }
-    return () => {
-      document.body.style.overflow = "auto";
-    };
-  }, [
-    showHistoryModal,
-    showAdjustModal,
-    showImageModal,
-    showGroupFilter,
-    showStockFilter,
-  ]);
+  }, [products, selectedGroup, stockFilter, searchTerm, getGroupProducts]);
 
   // Toggle search input
   const toggleSearch = () => {
@@ -695,8 +695,8 @@ const InventoryPage: React.FC = () => {
   if (loading && products.length === 0) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-black p-3">
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
-          {Array.from({ length: 18 }).map((_, index) => (
+        <div className="grid grid-cols-2 gap-3">
+          {Array.from({ length: 6 }).map((_, index) => (
             <ProductSkeleton key={index} />
           ))}
         </div>
@@ -728,6 +728,7 @@ const InventoryPage: React.FC = () => {
             bg-white/90 dark:bg-black/90 backdrop-blur-sm
             border-b border-gray-200 dark:border-gray-900
             transition-transform duration-300 ease-in-out
+            transform-gpu will-change-transform
             ${showHeader ? "translate-y-0" : "-translate-y-full"}
           `}
         >
@@ -1013,19 +1014,17 @@ const InventoryPage: React.FC = () => {
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
-              {" "}
-              {/* Increased gap from 3 to 4 */}
               {filteredProducts.map((product) => {
                 const imageUrl = getImageUrl(product);
                 return (
                   <div
                     key={product.id}
-                    onClick={() => handleViewHistory(product)} // CARD CLICK → HISTORY
+                    onClick={() => handleViewHistory(product)}
                     className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow duration-200 cursor-pointer"
                   >
                     {/* Product Image */}
                     <div
-                      onClick={(e) => handleImageClick(product, e)} // IMAGE CLICK → IMAGE
+                      onClick={(e) => handleImageClick(product, e)}
                       className="w-full aspect-square bg-gray-100 dark:bg-gray-800 relative overflow-hidden"
                     >
                       {imageUrl ? (
@@ -1043,7 +1042,9 @@ const InventoryPage: React.FC = () => {
                                 : "opacity-0"
                             } transition-opacity duration-300`}
                             onLoad={() => handleImageLoad(product.id)}
+                            onError={(e) => handleImageError(product.id, e)}
                             loading="lazy"
+                            decoding="async"
                             crossOrigin="anonymous"
                           />
 
@@ -1090,7 +1091,7 @@ const InventoryPage: React.FC = () => {
                         {/* Adjust Button ONLY */}
                         <button
                           onClick={(e) => {
-                            e.stopPropagation(); // ⛔ prevent history click
+                            e.stopPropagation();
                             setSelectedProduct(product);
                             setShowAdjustModal(true);
                           }}
@@ -1127,6 +1128,10 @@ const InventoryPage: React.FC = () => {
                 alt={selectedProduct.productName}
                 className="max-w-full max-h-full object-contain rounded-lg"
                 crossOrigin="anonymous"
+                onError={(e) => {
+                  const img = e.target as HTMLImageElement;
+                  img.style.display = 'none';
+                }}
               />
             </div>
 
