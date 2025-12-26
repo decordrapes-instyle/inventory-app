@@ -73,13 +73,10 @@ const ProfilePage: React.FC = () => {
       }
       setServerCount(serverItemCount);
 
-      // Compare counts
       if (localItemCount === serverItemCount) {
         setSyncStatus("synced");
-        toast.success("Inventory is synced ✓");
       } else {
         setSyncStatus("mismatch");
-        toast.error("Sync mismatch detected");
       }
     } catch (error) {
       console.error("Sync check error:", error);
@@ -90,15 +87,12 @@ const ProfilePage: React.FC = () => {
     }
   };
 
-  // Hard refresh - clear cache and reload
   const hardRefresh = () => {
     setSyncing(true);
 
     try {
-      // Clear inventory cache
       localStorage.removeItem("inventory_items");
 
-      // Clear image cache if exists
       const imageCacheKeys = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
@@ -113,7 +107,6 @@ const ProfilePage: React.FC = () => {
 
       toast.success("Cache cleared");
 
-      // Reload after 1 second
       setTimeout(() => {
         window.location.reload();
       }, 1000);
@@ -135,7 +128,6 @@ const ProfilePage: React.FC = () => {
 
   return (
     <div className="pt-3 min-h-screen bg-white dark:bg-black pb-24">
-      {/* Header */}
       <div className="pt-safe flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-900">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate(-1)}>
