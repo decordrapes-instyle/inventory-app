@@ -695,8 +695,8 @@ const InventoryPage: React.FC = () => {
   if (loading && products.length === 0) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-black p-3">
-        <div className="grid grid-cols-2 gap-3">
-          {Array.from({ length: 6 }).map((_, index) => (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
+          {Array.from({ length: 18 }).map((_, index) => (
             <ProductSkeleton key={index} />
           ))}
         </div>
@@ -1012,7 +1012,7 @@ const InventoryPage: React.FC = () => {
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
               {" "}
               {/* Increased gap from 3 to 4 */}
               {filteredProducts.map((product) => {

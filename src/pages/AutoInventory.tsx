@@ -449,7 +449,7 @@ useEffect(() => {
   const ProductSkeleton = () => (
     <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden animate-pulse p-4">
       <div className="flex justify-between">
-        <div className="space-y-2 flex-1">
+        <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
           <div className="h-4 bg-gray-200 dark:bg-gray-800 rounded w-3/4"></div>
           <div className="h-3 bg-gray-200 dark:bg-gray-800 rounded w-1/2"></div>
         </div>
@@ -462,7 +462,7 @@ useEffect(() => {
   if (loading && products.length === 0) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-black p-4">
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {Array.from({ length: 6 }).map((_, index) => (
             <ProductSkeleton key={index} />
           ))}
@@ -804,7 +804,7 @@ useEffect(() => {
               )}
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {filteredProducts.map((product) => (
                 <div
                   key={product.id}
@@ -1085,7 +1085,7 @@ useEffect(() => {
                     </p>
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                     {productTransactions.map((transaction) => (
                       <div
                         key={transaction.id}
