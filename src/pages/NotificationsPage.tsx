@@ -16,6 +16,34 @@ import {
 import { Calendar as CalendarComponent } from "../components/ui/calender";
 import { format } from "date-fns";
 
+function CountUp({ value }: { value: number }) {
+  const [count, setCount] = useState(value);
+
+  useEffect(() => {
+    let start = count;
+    const end = value;
+    if (start === end) return;
+
+    const duration = 500; // animation duration in ms
+    const increment = (end - start) / (duration / 16); // roughly 60fps
+
+    let current = start;
+    const interval = setInterval(() => {
+      current += increment;
+      if ((increment > 0 && current >= end) || (increment < 0 && current <= end)) {
+        current = end;
+        clearInterval(interval);
+      }
+      setCount(Math.floor(current));
+    }, 16);
+
+    return () => clearInterval(interval);
+  }, [value]);
+
+  return (
+    <span className="text-2xl font-bold text-gray-900 dark:text-white">{count}</span>
+  );
+}
 interface Transaction {
   id: string;
   productId: string;
@@ -335,81 +363,85 @@ const NotificationsPage: React.FC = () => {
     <div key={transaction.id} className="mb-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
       <div className="p-4">
         <div className="flex items-start justify-between mb-3">
-          <div className="flex items-start gap-3 flex-1">
-            <div className={`p-2 rounded-lg ${transaction.quantityChange > 0 ? 'bg-green-50 dark:bg-green-900/20' : 'bg-red-50 dark:bg-red-900/20'}`}>
-              {transaction.quantityChange > 0 ? (
-                <TrendingUp className="w-5 h-5 text-green-600 dark:text-green-400" />
-              ) : (
-                <TrendingDown className="w-5 h-5 text-red-600 dark:text-red-400" />
-              )}
-            </div>
-            <div className="flex-1">
-              <div className="flex justify-between items-start">
-                <div>
-                  <span className="font-bold text-lg text-gray-900 dark:text-white block">
-                    {`${transaction.quantityChange > 0 ? '+' : ''}${Number(transaction.quantityChange).toFixed(2)} ${transaction.unit}`}
-                  </span>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-1 mt-1">
-                    <Package size={14} /> {transaction.productName}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {new Date(transaction.createdAt).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric'
-                    })}
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {new Date(transaction.createdAt).toLocaleTimeString('en-US', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      hour12: true
-                    })}
-                  </p>
-                </div>
-              </div>
+          <div className="flex flex-col gap-3 w-full">
+  {/* MAIN ROW */}
+  <div className="flex items-start gap-3 w-full">
+    <div
+      className={`p-2 rounded-lg ${
+        transaction.quantityChange > 0
+          ? "bg-green-50 dark:bg-green-900/20"
+          : "bg-red-50 dark:bg-red-900/20"
+      }`}
+    >
+      {transaction.quantityChange > 0 ? (
+        <TrendingUp className="w-5 h-5 text-green-600 dark:text-green-400" />
+      ) : (
+        <TrendingDown className="w-5 h-5 text-red-600 dark:text-red-400" />
+      )}
+    </div>
 
-              {/* User info for admin */}
-              {userRole === 'admin' && transaction.performedByName && (
-                <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
-                  {transaction.performedByImage ? (
-                    <img 
-                      src={transaction.performedByImage} 
-                      alt={transaction.performedByName}
-                      className="w-6 h-6 rounded-full object-cover border border-gray-200 dark:border-gray-600"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = 'none';
-                        // const parent = (e.target as HTMLImageElement).parentElement;
-                        // if (parent) {
-                        //   const fallback = document.createElement('div');
-                        //   fallback.className = 'w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-800 flex items-center justify-center';
-                        //   fallback.innerHTML = `<span class="text-xs font-medium text-blue-600 dark:text-blue-300">${transaction.performedByName.charAt(0).toUpperCase()}</span>`;
-                        //   parent.appendChild(fallback);
-                        // }
-                      }}
-                    />
-                  ) : (
-                    <div className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-800 flex items-center justify-center">
-                      <span className="text-xs font-medium text-blue-600 dark:text-blue-300">
-                        {transaction.performedByName.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                      {transaction.performedByName}
-                    </p>
-                  </div>
-                  {transaction.performedByRole && (
-                    <span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded">
-                      {transaction.performedByRole}
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
+    <div className="flex-1">
+      <div className="flex justify-between items-start">
+        <div>
+          <span className="font-bold text-lg text-gray-900 dark:text-white block">
+            {`${transaction.quantityChange > 0 ? "+" : ""}${Number(
+              transaction.quantityChange
+            ).toFixed(2)} ${transaction.unit}`}
+          </span>
+          <p className="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-1 mt-1">
+            <Package size={14} /> {transaction.productName}
+          </p>
+        </div>
+
+        <div className="text-right">
+          <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            {new Date(transaction.createdAt).toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+            })}
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {new Date(transaction.createdAt).toLocaleTimeString("en-US", {
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: true,
+            })}
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {/* USER INFO – FULL WIDTH ROW */}
+  {userRole === "admin" && transaction.performedByName && (
+    <div className="flex items-center gap-2 w-full mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+      {transaction.performedByImage ? (
+        <img
+          src={transaction.performedByImage}
+          alt={transaction.performedByName}
+          className="w-6 h-6 rounded-full object-cover border border-gray-200 dark:border-gray-600"
+        />
+      ) : (
+        <div className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-800 flex items-center justify-center">
+          <span className="text-xs font-medium text-blue-600 dark:text-blue-300">
+            {transaction.performedByName.charAt(0).toUpperCase()}
+          </span>
+        </div>
+      )}
+
+      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+        {transaction.performedByName}
+      </p>
+
+      {transaction.performedByRole && (
+        <span className="ml-auto text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded">
+          {transaction.performedByRole}
+        </span>
+      )}
+    </div>
+  )}
+</div>
+
         </div>
         
         {transaction.note && (
@@ -444,7 +476,7 @@ const NotificationsPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-black pb-20">
       {/* Header */}
-      <div className="sticky top-0 z-20 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
+      <div className="pt-safe sticky top-0 z-20 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
         <div className="px-4 py-3">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
@@ -695,7 +727,7 @@ const NotificationsPage: React.FC = () => {
         <div className="mb-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-white tracking-wide">
                 {selectedFilter === 'today' && "Today's Work"}
                 {selectedFilter === 'yesterday' && "Yesterday's Work"}
                 {selectedFilter === 'last7' && "Last 7 Days Work"}
@@ -715,7 +747,7 @@ const NotificationsPage: React.FC = () => {
             </div>
             <div className="text-right">
               <span className="text-2xl font-bold text-gray-900 dark:text-white">
-                {filteredTransactions.length}
+                <CountUp value={filteredTransactions.length} />
               </span>
               <p className="text-xs text-gray-500 dark:text-gray-400">Activities</p>
             </div>
