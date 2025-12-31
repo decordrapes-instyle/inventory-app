@@ -1,6 +1,7 @@
-import { NavLink } from 'react-router-dom';
-import { Home, Package, Bell } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import React, { memo, useMemo } from "react";
+import { Home, Package, Bell, TrendingUp } from "lucide-react";
+import { useNavigation } from "../context/NavigationContext";
+import { useAuth } from "../context/AuthContext";
 
 /* -------------------- Types -------------------- */
 type NavItemProps = {
@@ -9,67 +10,106 @@ type NavItemProps = {
   label: string;
 };
 
-/* -------------------- Mobile / Tablet Nav Item -------------------- */
-const MobileNavItem = ({ to, icon: Icon, label }: NavItemProps) => (
-  <NavLink
-    to={to}
-    className={({ isActive }) =>
-      `flex flex-col items-center justify-center h-full w-full transition-all ${
-        isActive
-          ? 'text-blue-600 dark:text-blue-400 font-bold'
-          : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-      }`
-    }
-  >
-    {({ isActive }) => (
+/* -------------------- Mobile Nav Item -------------------- */
+const MobileNavItem = memo(({ to, icon: Icon, label }: NavItemProps) => {
+  const { navigate, currentPath } = useNavigation();
+  const isActive = currentPath === to;
+
+  return (
+    <a
+      href="#"
+      onClick={(e) => {
+        e.preventDefault();
+        navigate(to);
+      }}
+      className="flex flex-col items-center justify-center h-full w-full"
+    >
       <div className="relative flex flex-col items-center">
+        {/* Active indicator */}
         {isActive && (
-          <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-16 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-full" />
+          <div
+            className="absolute -top-1 left-1/2 -translate-x-1/2
+                       w-16 h-8 rounded-full
+                       bg-slate-600 dark:bg-neutral-300"
+          />
         )}
 
         <div className="relative z-10 flex flex-col items-center">
+          {/* Icon */}
           <Icon
-            className={`w-6 h-6 transition-transform ${
-              isActive ? 'scale-110' : ''
+            className={`w-6 h-6 transition-colors ${
+              isActive
+                ? "text-white dark:text-neutral-900"
+                : "text-gray-500 dark:text-gray-500"
             }`}
           />
-          <span className="text-xs mt-2">{label}</span>
+
+          {/* Label */}
+          <span
+            className={`text-xs mt-2 transition-all ${
+              isActive
+                ? "font-semibold text-gray-800 dark:text-gray-300"
+                : "font-normal text-gray-500 dark:text-gray-500"
+            }`}
+          >
+            {label}
+          </span>
         </div>
       </div>
-    )}
-  </NavLink>
-);
+    </a>
+  );
+});
+MobileNavItem.displayName = "MobileNavItem";
 
 /* -------------------- Desktop Nav Item -------------------- */
-const DesktopNavItem = ({ to, icon: Icon, label }: NavItemProps) => (
-  <NavLink
-    to={to}
-    className={({ isActive }) =>
-      `flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+const DesktopNavItem = memo(({ to, icon: Icon, label }: NavItemProps) => {
+  const { navigate, currentPath } = useNavigation();
+  const isActive = currentPath === to;
+
+  return (
+    <a
+      href="#"
+      onClick={(e) => {
+        e.preventDefault();
+        navigate(to);
+      }}
+      className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
         isActive
-          ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold'
-          : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
-      }`
-    }
-  >
-    <Icon className="w-5 h-5" />
-    <span className="text-sm">{label}</span>
-  </NavLink>
-);
+          ? "bg-slate-900 text-white dark:bg-neutral-200 dark:text-neutral-900 font-semibold"
+          : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-neutral-900"
+      }`}
+    >
+      <Icon className="w-5 h-5" />
+      <span className="text-sm">{label}</span>
+    </a>
+  );
+});
+DesktopNavItem.displayName = "DesktopNavItem";
 
-/* -------------------- Main Component -------------------- */
+/* -------------------- Main Navigation -------------------- */
 const AppNavigation: React.FC = () => {
-  const { userProfile } = useAuth();
+  const { user, userProfile, initializing } = useAuth();
+  const { navigate, currentPath } = useNavigation();
 
-  const avatar =
-    userProfile?.profileImage ||
-    `https://ui-avatars.com/api/?name=${encodeURIComponent(
-      userProfile?.displayName || 'User'
-    )}&background=4f46e5&color=fff`;
+  const isAdmin = userProfile?.role === "admin";
+
+  const avatar = useMemo(() => {
+    if (!userProfile) return "";
+    return (
+      userProfile.profileImage ||
+      `https://ui-avatars.com/api/?name=${encodeURIComponent(
+        userProfile.displayName || "User"
+      )}&background=111827&color=fff`
+    );
+  }, [userProfile]);
+
+  if (!initializing && !user) return null;
+
+  const isProfileActive = currentPath === "/profile";
 
   return (
     <>
-      {/* -------------------- Desktop Sidebar -------------------- */}
+      {/* Desktop Sidebar */}
       <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:w-64 lg:flex lg:flex-col bg-white dark:bg-black border-r border-gray-200 dark:border-gray-800">
         <div className="flex flex-col flex-1 p-4 gap-2">
           <h1 className="text-lg font-bold mb-4">Inventory</h1>
@@ -77,61 +117,78 @@ const AppNavigation: React.FC = () => {
           <DesktopNavItem to="/" icon={Home} label="Home" />
           <DesktopNavItem to="/auto-inventory" icon={Package} label="Fabrics" />
           <DesktopNavItem to="/notifications" icon={Bell} label="Alerts" />
+          {isAdmin && (
+            <DesktopNavItem to="/stock" icon={TrendingUp} label="Stock" />
+          )}
 
           <div className="mt-auto">
-            <NavLink
-              to="/profile"
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                  isActive
-                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
-                }`
-              }
+            <a
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                navigate("/profile");
+              }}
+              className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+                isProfileActive
+                  ? "bg-slate-900 text-white dark:bg-neutral-200 dark:text-neutral-900 font-semibold"
+                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-neutral-900"
+              }`}
             >
               <img
                 src={avatar}
-                alt="Profile"
                 className="w-8 h-8 rounded-full object-cover"
+                alt="Profile"
+                loading="lazy"
               />
               <span className="text-sm">Profile</span>
-            </NavLink>
+            </a>
           </div>
         </div>
       </aside>
 
-      {/* -------------------- Mobile / Tablet Bottom Nav -------------------- */}
+      {/* Mobile Bottom Nav */}
       <nav className="lg:hidden fixed bottom-0 inset-x-0 bg-white dark:bg-black border-t border-gray-200 dark:border-gray-800 pb-safe">
-        <div className="grid grid-cols-4 h-20">
+        <div className={`grid ${isAdmin ? "grid-cols-5" : "grid-cols-4"} h-20`}>
           <MobileNavItem to="/" icon={Home} label="Home" />
-          <MobileNavItem
-            to="/auto-inventory"
-            icon={Package}
-            label="Fabrics"
-          />
+          <MobileNavItem to="/auto-inventory" icon={Package} label="Fabrics" />
           <MobileNavItem to="/notifications" icon={Bell} label="Alerts" />
+          {isAdmin && (
+            <MobileNavItem to="/stock" icon={TrendingUp} label="Stock" />
+          )}
 
-          <NavLink
-            to="/profile"
-            className={({ isActive }) =>
-              `flex flex-col items-center justify-center h-full w-full ${
-                isActive
-                  ? 'text-blue-600 dark:text-blue-400 font-bold'
-                  : 'text-gray-500 dark:text-gray-400'
-              }`
-            }
+          {/* Profile */}
+          <a
+            href="#"
+            onClick={(e) => {
+              e.preventDefault();
+              navigate("/profile");
+            }}
+            className="flex flex-col items-center justify-center h-full w-full"
           >
             <img
               src={avatar}
-              className="w-6 h-6 rounded-full object-cover"
+              className={`w-6 h-6 rounded-full object-cover transition-all ${
+                isProfileActive
+                  ? "ring-2 ring-slate-800 dark:ring-neutral-200"
+                  : ""
+              }`}
               alt="Profile"
+              loading="lazy"
             />
-            <span className="text-xs mt-2">Profile</span>
-          </NavLink>
+            <span
+              className={`text-xs mt-2 ${
+                isProfileActive
+                  ? "font-semibold text-gray-800 dark:text-gray-300"
+                  : "text-gray-500 dark:text-gray-500"
+              }`}
+            >
+              Profile
+            </span>
+          </a>
         </div>
       </nav>
     </>
   );
 };
 
-export default AppNavigation;
+export default memo(AppNavigation);

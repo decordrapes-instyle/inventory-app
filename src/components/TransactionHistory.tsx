@@ -1,10 +1,11 @@
-// src/components/TransactionHistory.tsx
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { ref, onValue, get } from 'firebase/database';
+
 import { database } from '../config/firebase';
 import { History, TrendingUp, TrendingDown, Package } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { loadFirebase } from '../config/firebaseLoader';
+const { ref, onValue, get } = await loadFirebase();
 
 interface Transaction {
   id: string;

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigation } from '../context/NavigationContext';
 import { useAuth } from '../context/AuthContext';
 
 const LoginPage: React.FC = () => {
@@ -12,7 +12,7 @@ const LoginPage: React.FC = () => {
   const [error, setError] = useState('');
 
   const { login, signup } = useAuth();
-  const navigate = useNavigate();
+  const { navigate } = useNavigation();
 
   const submit = async () => {
     if (!isFormValid || loading) return;

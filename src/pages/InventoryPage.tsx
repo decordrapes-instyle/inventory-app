@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
-import { ref, push, set, get, update } from "firebase/database";
-import { database } from "../config/firebase";
+import { useInventoryData } from "../hooks/useInventory";
 import {
   Search,
   Package,
@@ -18,6 +17,8 @@ import {
   Edit,
   Filter,
   Layers,
+  ChevronDown,
+  Loader2,
 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 
@@ -42,6 +43,7 @@ type InventoryUnit =
   | "mm";
 
 interface Product {
+  rate?: number;
   id: string;
   productId: string;
   productName: string;
@@ -66,80 +68,10 @@ interface Transaction {
   createdAt: number;
   performedBy?: string;
 }
-
-interface InventoryGroup {
-  id: string;
-  name: string;
-  description?: string;
-  items: Array<{
-    productId: string;
-    productName: string;
-    unit: InventoryUnit;
-    addedAt: number;
-    inventoryType: "product" | "manual";
-  }>;
-  createdAt: number;
-  updatedAt: number;
-}
-
-// Image caching utility
-class ImageCache {
-  private static cacheKey = "inventory_image_cache";
-  private static maxAge = 24 * 60 * 60 * 1000; // 24 hours
-
-  static getCache(): Record<string, { url: string; timestamp: number }> {
-    try {
-      const cache = localStorage.getItem(this.cacheKey);
-      return cache ? JSON.parse(cache) : {};
-    } catch {
-      return {};
-    }
-  }
-
-  static setCache(cache: Record<string, { url: string; timestamp: number }>) {
-    try {
-      localStorage.setItem(this.cacheKey, JSON.stringify(cache));
-    } catch (error) {
-      console.warn("Failed to cache images:", error);
-    }
-  }
-
-  static getCachedUrl(productId: string, currentUrl?: string): string | null {
-    const cache = this.getCache();
-    const cached = cache[productId];
-
-    if (cached && currentUrl && cached.url === currentUrl) {
-      // Check if cache is still valid (less than 24 hours old)
-      if (Date.now() - cached.timestamp < this.maxAge) {
-        return cached.url;
-      }
-    }
-    return null;
-  }
-
-  static cacheImage(productId: string, url: string) {
-    const cache = this.getCache();
-    cache[productId] = {
-      url,
-      timestamp: Date.now(),
-    };
-    this.setCache(cache);
-  }
-
-  static clearCache() {
-    try {
-      localStorage.removeItem(this.cacheKey);
-    } catch (error) {
-      console.warn("Failed to clear image cache:", error);
-    }
-  }
-}
-
 const InventoryPage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, initializing } = useAuth();
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(72);
-  const [products, setProducts] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -148,14 +80,11 @@ const InventoryPage: React.FC = () => {
   const [productTransactions, setProductTransactions] = useState<Transaction[]>(
     []
   );
-  const [_refreshing, setRefreshing] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [uiLoading, setUiLoading] = useState(false);
   const [adjustQuantity, setAdjustQuantity] = useState("");
   const [adjustNote, setAdjustNote] = useState("");
   const [adjustType, setAdjustType] = useState<"add" | "reduce">("add");
   const [imageLoaded, setImageLoaded] = useState<Record<string, boolean>>({});
-  const [cachedImages, setCachedImages] = useState<Record<string, string>>({});
-  const [inventoryGroups, setInventoryGroups] = useState<InventoryGroup[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [showGroupFilter, setShowGroupFilter] = useState(false);
   const [showStockFilter, setShowStockFilter] = useState(false);
@@ -166,14 +95,25 @@ const InventoryPage: React.FC = () => {
   const [showHeader, setShowHeader] = useState(true);
   const [showSearchInput, setShowSearchInput] = useState(false);
   const lastScrollY = useRef(0);
+  const [chunkLoading, setChunkLoading] = useState(false);
 
-  // Add this custom hook at the top of your component (before the InventoryPage function)
+  const {
+    inventoryGroups,
+    loading: dataLoading,
+    adjustStock,
+    getProductHistory,
+    displayProducts,
+    loadMore,
+    hasMore,
+    searchProducts,
+    allProducts,
+  } = useInventoryData(true);
+
   const useSafeAreaHeight = () => {
     const [safeAreaHeight, setSafeAreaHeight] = useState(0);
 
     useEffect(() => {
       const calculateSafeArea = () => {
-        // Create a test element to measure safe area
         const testEl = document.createElement("div");
         testEl.style.position = "fixed";
         testEl.style.top = "0";
@@ -191,7 +131,6 @@ const InventoryPage: React.FC = () => {
         return paddingTop;
       };
 
-      // Calculate after mount
       const timer = setTimeout(() => {
         const height = calculateSafeArea();
         setSafeAreaHeight(height);
@@ -203,13 +142,8 @@ const InventoryPage: React.FC = () => {
     return safeAreaHeight;
   };
 
-  // Then in your InventoryPage component, add:
   const safeAreaHeight = useSafeAreaHeight();
 
-  // Update the header measurement useEffect to account for safe area:
-  // Replace the useEffect for measuring header height with this improved version:
-
-  // Measure header height with proper support for pt-safe in APK
   useEffect(() => {
     let mounted = true;
     let observer: ResizeObserver | null = null;
@@ -218,29 +152,24 @@ const InventoryPage: React.FC = () => {
       if (!mounted || !headerRef.current) return;
 
       const height = headerRef.current.getBoundingClientRect().height;
-      // Add extra padding for spacing
-      const calculatedHeight = Math.max(height + 8, 80); // Minimum 80px
+      const calculatedHeight = Math.max(height + 8, 80);
       setHeaderHeight(calculatedHeight);
     };
 
-    // Initial measurement
     if (headerRef.current) {
       updateHeaderHeight();
     }
 
-    // Multiple attempts to account for APK timing issues
     const attempts = [0, 50, 100, 200, 500];
     attempts.forEach((delay) => {
       setTimeout(updateHeaderHeight, delay);
     });
 
-    // Use ResizeObserver for dynamic changes
     if (headerRef.current) {
       observer = new ResizeObserver(updateHeaderHeight);
       observer.observe(headerRef.current);
     }
 
-    // Also update on window resize
     window.addEventListener("resize", updateHeaderHeight);
 
     return () => {
@@ -251,7 +180,6 @@ const InventoryPage: React.FC = () => {
       window.removeEventListener("resize", updateHeaderHeight);
     };
   }, [
-    
     showGroupFilter,
     showStockFilter,
     showSearchInput,
@@ -272,12 +200,10 @@ const InventoryPage: React.FC = () => {
     return () => clearTimeout(timer);
   }, []);
 
-  // Handle scroll to hide/show header
   useEffect(() => {
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
 
-      // Don't hide header if any filter is expanded
       const isFilterExpanded =
         showGroupFilter || showStockFilter || showSearchInput;
       if (isFilterExpanded) {
@@ -298,7 +224,6 @@ const InventoryPage: React.FC = () => {
     return () => window.removeEventListener("scroll", handleScroll);
   }, [showGroupFilter, showStockFilter, showSearchInput]);
 
-  // Handle back button for modals
   useEffect(() => {
     const handlePopState = () => {
       if (showHistoryModal) {
@@ -322,7 +247,6 @@ const InventoryPage: React.FC = () => {
       }
     };
 
-    // Push state when modals open
     if (
       showHistoryModal ||
       showAdjustModal ||
@@ -348,102 +272,6 @@ const InventoryPage: React.FC = () => {
     showSearchInput,
   ]);
 
-  // Fetch products and groups from Firebase
-  const fetchProducts = async (forceRefresh = false) => {
-    try {
-      setLoading(true);
-      setShowSearchInput(true);
-      setShowSearchInput(false);
-
-      // Fetch products
-      const productsRef = ref(database, "quotations/manualInventory");
-      const productsSnapshot = await get(productsRef);
-
-      // Fetch inventory groups
-      const groupsRef = ref(database, "quotations/inventoryGrp");
-      const groupsSnapshot = await get(groupsRef);
-
-      if (productsSnapshot.exists()) {
-        const data = productsSnapshot.val();
-        const productsList = Object.entries(data).map(([key, value]: any) => ({
-          id: key,
-          ...value,
-        }));
-
-        // Store item count in localStorage for sync checking
-        localStorage.setItem("inventory_items", JSON.stringify(productsList));
-
-        // Cache images for products that have them
-        productsList.forEach((product) => {
-          if (product.imageUrl && !forceRefresh) {
-            const cachedUrl = ImageCache.getCachedUrl(
-              product.id,
-              product.imageUrl
-            );
-            if (cachedUrl) {
-              setCachedImages((prev) => ({ ...prev, [product.id]: cachedUrl }));
-            } else if (product.imageUrl) {
-              ImageCache.cacheImage(product.id, product.imageUrl);
-              setCachedImages((prev) => ({
-                ...prev,
-                [product.id]: product.imageUrl,
-              }));
-            }
-          }
-        });
-
-        setProducts(productsList);
-      } else {
-        setProducts([]);
-        localStorage.setItem("inventory_items", JSON.stringify([]));
-      }
-
-      if (groupsSnapshot.exists()) {
-        const groupsData = groupsSnapshot.val();
-        const groupsList = Object.entries(groupsData)
-          .map(([key, value]: any) => ({
-            id: key,
-            ...value,
-          }))
-          // Filter groups to only include those with manual inventory items
-          .filter((group: InventoryGroup) =>
-            group.items.some((item) => item.inventoryType === "manual")
-          )
-          // Also filter each group's items to only include manual items
-          .map((group: InventoryGroup) => ({
-            ...group,
-            items: group.items.filter(
-              (item) => item.inventoryType === "manual"
-            ),
-          }));
-
-        setInventoryGroups(groupsList);
-      } else {
-        setInventoryGroups([]);
-      }
-    } catch (err: any) {
-      console.error("Error loading inventory:", err);
-      toast.error("Failed to load inventory");
-      setProducts([]);
-      setInventoryGroups([]);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  // Fetch products and groups on mount
-  useEffect(() => {
-    fetchProducts();
-
-    return () => {
-      setProducts([]);
-      setCachedImages({});
-      setInventoryGroups([]);
-    };
-  }, []);
-
-  // Close filters when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -466,7 +294,6 @@ const InventoryPage: React.FC = () => {
     };
   }, []);
 
-  // Focus search input when opened
   useEffect(() => {
     if (showSearchInput && searchInputRef.current) {
       searchInputRef.current.focus();
@@ -496,20 +323,6 @@ const InventoryPage: React.FC = () => {
         quantityChange = -quantityChange;
       }
 
-      const productRef = ref(
-        database,
-        `quotations/manualInventory/${selectedProduct.id}`
-      );
-      const snapshot = await get(productRef);
-      const currentProduct = snapshot.val();
-
-      if (!currentProduct) {
-        toast.error("Product not found");
-        return;
-      }
-
-      const currentStock = currentProduct.stock || 0;
-      const newStock = currentStock + quantityChange;
       const userNameInfo = user
         ? user.displayName || user.email || user.uid
         : "Naam nhi hai";
@@ -518,33 +331,14 @@ const InventoryPage: React.FC = () => {
         ? `${adjustNote} (${userInfo})`
         : `${quantityChange > 0 ? "Added" : "Removed"} by ${userNameInfo}`;
 
-      const transactionRef = push(
-        ref(database, `quotations/inventoryTransactions/${selectedProduct.id}`)
-      );
-      const transactionData = {
-        productId: selectedProduct.productId,
-        productName: selectedProduct.productName,
-        quantityChange: quantityChange,
-        unit: selectedProduct.unit,
-        source: "manual",
-        note: finalNote,
-        performedBy: userInfo,
-        createdAt: Date.now(),
-      };
-
-      await set(transactionRef, transactionData);
-      await update(productRef, {
-        stock: newStock,
-        updatedAt: Date.now(),
-      });
-
-      // Update local state
-      setProducts((prev) =>
-        prev.map((p) =>
-          p.id === selectedProduct.id
-            ? { ...p, stock: newStock, updatedAt: Date.now() }
-            : p
-        )
+      // Use the hook's adjustStock function
+      await adjustStock(
+        selectedProduct.id,
+        selectedProduct.productName,
+        quantityChange,
+        selectedProduct.unit,
+        finalNote,
+        userInfo
       );
 
       toast.success(`Stock ${quantityChange > 0 ? "added" : "removed"}`);
@@ -561,43 +355,19 @@ const InventoryPage: React.FC = () => {
 
   const handleViewHistory = async (product: Product) => {
     setSelectedProduct(product);
-    setLoading(true);
+    setUiLoading(true);
 
     try {
-      const transactionsRef = ref(
-        database,
-        `quotations/inventoryTransactions/${product.id}`
-      );
-      const snapshot = await get(transactionsRef);
-
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        const transactionsList = Object.entries(data)
-          .map(([key, value]: any) => ({
-            id: key,
-            ...value,
-          }))
-          .sort((a: Transaction, b: Transaction) => b.createdAt - a.createdAt);
-        setProductTransactions(transactionsList);
-      } else {
-        setProductTransactions([]);
-      }
-
+      // Use the hook's getProductHistory function
+      const transactionsList = await getProductHistory(product.id);
+      setProductTransactions(transactionsList);
       setShowHistoryModal(true);
     } catch (err: any) {
       console.error("Error loading transactions:", err);
       toast.error("Failed to load history");
     } finally {
-      setLoading(false);
+      setUiLoading(false);
     }
-  };
-
-  // Get image URL with caching
-  const getImageUrl = (product: Product): string | undefined => {
-    if (cachedImages[product.id]) {
-      return cachedImages[product.id];
-    }
-    return product.imageUrl;
   };
 
   const handleImageClick = (product: Product, e: React.MouseEvent) => {
@@ -610,34 +380,37 @@ const InventoryPage: React.FC = () => {
     setImageLoaded((prev) => ({ ...prev, [productId]: true }));
   };
 
-  // Get products for selected group - ONLY include items with inventoryType "manual"
   const getGroupProducts = (groupId: string): Product[] => {
     const group = inventoryGroups.find((g) => g.id === groupId);
     if (!group) return [];
 
-    // Group items are already filtered to only manual items in fetchProducts
     const groupProductIds = new Set(group.items.map((item) => item.productId));
-    return products.filter((product) => groupProductIds.has(product.productId));
+    return allProducts.filter((product) =>
+      groupProductIds.has(product.productId)
+    );
   };
 
-  // Filter products based on selected group and search term
   const getFilteredProducts = () => {
-    let filtered = selectedGroup ? getGroupProducts(selectedGroup) : products;
+    let filtered: Product[] = [];
 
-    // Apply stock filter
+    // If searching, use the search function that searches ALL products
+    if (searchTerm) {
+      filtered = searchProducts(searchTerm);
+    }
+    // If no search but has group filter
+    else if (selectedGroup) {
+      filtered = getGroupProducts(selectedGroup);
+    }
+    // If no search and no group filter, use displayProducts for chunked loading
+    else {
+      filtered = displayProducts;
+    }
+
+    // Apply stock filter to the filtered results
     if (stockFilter === "low") {
       filtered = filtered.filter((p) => p.stock > 0 && p.stock <= 10);
     } else if (stockFilter === "out") {
       filtered = filtered.filter((p) => p.stock === 0);
-    }
-
-    // Apply search term
-    if (searchTerm) {
-      filtered = filtered.filter(
-        (p) =>
-          p.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          p.productId.toLowerCase().includes(searchTerm.toLowerCase())
-      );
     }
 
     return filtered;
@@ -645,7 +418,15 @@ const InventoryPage: React.FC = () => {
 
   const filteredProducts = getFilteredProducts();
 
-  // Handle body overflow for modals
+  const handleLoadMore = () => {
+    setChunkLoading(true);
+    loadMore();
+    // Reset chunk loading after a short delay
+    setTimeout(() => {
+      setChunkLoading(false);
+    }, 300);
+  };
+
   useEffect(() => {
     if (
       showHistoryModal ||
@@ -669,7 +450,6 @@ const InventoryPage: React.FC = () => {
     showStockFilter,
   ]);
 
-  // Toggle search input
   const toggleSearch = () => {
     setShowSearchInput(!showSearchInput);
     setShowGroupFilter(false);
@@ -679,7 +459,6 @@ const InventoryPage: React.FC = () => {
     }
   };
 
-  // Skeleton Loading
   const ProductSkeleton = () => (
     <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden animate-pulse">
       <div className="w-full aspect-square bg-gray-200 dark:bg-gray-800"></div>
@@ -692,11 +471,54 @@ const InventoryPage: React.FC = () => {
     </div>
   );
 
-  if (loading && products.length === 0) {
+  if (initializing) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-black p-3">
         <div className="mt-[45px] grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-          {Array.from({ length: 20 }).map((_, index) => (
+          {Array.from({ length: 6 }).map((_, index) => (
+            <ProductSkeleton key={index} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-black">
+        <div className="text-center p-4">
+          <img
+            src="https://res.cloudinary.com/dmiwq3l2s/image/upload/v1764768203/vfw82jmca7zl5p86czhy.png"
+            alt="Company Logo"
+            className="w-24 h-24 rounded-full object-contain mx-auto mb-6"
+          />
+          <h1 className="text-3xl font-bold mb-2 text-gray-900 dark:text-white">
+            Inventory Management
+          </h1>
+          <p className="mb-8 text-gray-600 dark:text-gray-400 max-w-sm mx-auto">
+            Please log in to access the dashboard and manage your products.
+          </p>
+          <a
+            href="/login"
+            className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg text-lg transition-transform transform hover:scale-105"
+          >
+            Go to Login
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  // Only show skeleton on initial app load
+  if (
+    dataLoading &&
+    displayProducts.length === 0 &&
+    inventoryGroups.length === 0
+  ) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-black p-3">
+        <div className="mt-[45px] grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+          {Array.from({ length: 6 }).map((_, index) => (
             <ProductSkeleton key={index} />
           ))}
         </div>
@@ -720,7 +542,6 @@ const InventoryPage: React.FC = () => {
       />
 
       <div className="min-h-screen bg-gray-50 dark:bg-black text-gray-900 dark:text-white pb-24">
-        {/* HEADER */}
         <div
           ref={headerRef}
           className={`
@@ -731,21 +552,17 @@ const InventoryPage: React.FC = () => {
             ${showHeader ? "translate-y-0" : "-translate-y-full"}
           `}
         >
-          {/* TOP BAR (always one line) */}
           <div className="flex items-center justify-between h-14 px-4">
             <div className="flex items-center gap-2 min-w-0">
-              {/* LOGO */}
               <img
                 src="https://res.cloudinary.com/dmiwq3l2s/image/upload/v1764768203/vfw82jmca7zl5p86czhy.png"
                 alt="Company Logo"
                 className="w-7 h-7 rounded object-contain"
               />
-
               <h1 className="text-lg font-bold truncate">Inventory</h1>
             </div>
 
             <div className="flex items-center gap-2">
-              {/* SEARCH ICON */}
               <button
                 onClick={toggleSearch}
                 className={`p-2 rounded-lg transition-colors ${
@@ -755,7 +572,6 @@ const InventoryPage: React.FC = () => {
                 <Search className="w-5 h-5" />
               </button>
 
-              {/* GROUP ICON */}
               <button
                 onClick={() => {
                   setShowGroupFilter(!showGroupFilter);
@@ -771,7 +587,6 @@ const InventoryPage: React.FC = () => {
                 <Layers className="w-5 h-5" />
               </button>
 
-              {/* STOCK ICON */}
               <button
                 onClick={() => {
                   setShowStockFilter(!showStockFilter);
@@ -789,7 +604,6 @@ const InventoryPage: React.FC = () => {
             </div>
           </div>
 
-          {/* SEARCH INPUT ROW - Hidden by default */}
           {showSearchInput && (
             <div className="px-4 pb-3">
               <div className="relative">
@@ -813,46 +627,108 @@ const InventoryPage: React.FC = () => {
             </div>
           )}
 
-          {/* GROUP FILTER ROW - Grid layout */}
           {showGroupFilter && (
-            <div className="px-4 pb-3" ref={groupFilterRef}>
-              <div className="grid grid-cols-2 gap-2">
+            <div
+              ref={groupFilterRef}
+              className="bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800"
+            >
+              <div className="flex gap-5 px-4 py-3 overflow-x-auto scrollbar-hide">
                 <button
+                  type="button"
                   onClick={() => {
                     setSelectedGroup(null);
                     setShowGroupFilter(false);
                   }}
-                  className={`py-3 px-3 rounded-xl text-left transition-all duration-200 ${
-                    !selectedGroup
-                      ? "bg-purple-500 text-white shadow-md"
-                      : "bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-800"
-                  }`}
+                  className="shrink-0 flex flex-col items-center min-w-[76px] active:scale-[0.96] transition-transform"
                 >
-                  <span className="font-medium">All Groups</span>
-                </button>
-                {inventoryGroups.map((group) => (
-                  <button
-                    key={group.id}
-                    onClick={() => {
-                      setSelectedGroup(group.id);
-                      setShowGroupFilter(false);
-                    }}
-                    className={`py-3 px-3 rounded-xl text-left transition-all duration-200 ${
-                      selectedGroup === group.id
-                        ? "bg-purple-500 text-white shadow-md"
-                        : "bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-800"
-                    }`}
+                  <div
+                    className={`w-14 h-14 rounded-full flex items-center justify-center mb-1
+            ${
+              !selectedGroup
+                ? "bg-purple-600 shadow-sm"
+                : "bg-gray-200 dark:bg-gray-800"
+            }`}
                   >
-                    <span className="font-medium truncate block">
-                      {group.name}
+                    <span
+                      className={`text-sm font-bold ${
+                        !selectedGroup ? "text-white" : "text-gray-600"
+                      }`}
+                    >
+                      ALL
                     </span>
-                  </button>
-                ))}
+                  </div>
+
+                  <span
+                    className={`text-xs text-center leading-tight
+            ${
+              !selectedGroup
+                ? "text-purple-600 font-semibold"
+                : "text-gray-600 dark:text-gray-400"
+            }`}
+                  >
+                    All Groups
+                  </span>
+
+                  {!selectedGroup && (
+                    <div className="h-[3px] w-5 bg-purple-600 rounded-full mt-1" />
+                  )}
+                </button>
+
+                {inventoryGroups.map((group) => {
+                  const isSelected = selectedGroup === group.id;
+
+                  return (
+                    <button
+                      key={group.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedGroup(group.id);
+                        setShowGroupFilter(false);
+                      }}
+                      className="shrink-0 flex flex-col items-center min-w-[76px] active:scale-[0.96] transition-transform"
+                    >
+                      <div
+                        className={`w-14 h-14 rounded-full overflow-hidden mb-1
+                ${
+                  isSelected
+                    ? "bg-white shadow-sm"
+                    : "bg-gray-200 dark:bg-gray-800"
+                }`}
+                      >
+                        <img
+                          src={
+                            group.imageUrl || "/images/group-placeholder.png"
+                          }
+                          alt={group.name}
+                          onError={(e) => {
+                            e.currentTarget.src =
+                              "/images/group-placeholder.png";
+                          }}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+
+                      <span
+                        className={`text-xs text-center leading-tight max-w-[76px]
+                ${
+                  isSelected
+                    ? "text-purple-600 font-semibold"
+                    : "text-gray-600 dark:text-gray-400"
+                }`}
+                      >
+                        {group.name}
+                      </span>
+
+                      {isSelected && (
+                        <div className="h-[3px] w-5 bg-purple-600 rounded-full mt-1" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
 
-          {/* STOCK FILTER ROW - Grid layout */}
           {showStockFilter && (
             <div className="px-4 pb-3" ref={stockFilterRef}>
               <div className="grid grid-cols-3 gap-2">
@@ -899,7 +775,6 @@ const InventoryPage: React.FC = () => {
             </div>
           )}
 
-          {/* APPLIED FILTERS ROW - Always shows when filters are active */}
           {(searchTerm || selectedGroup || stockFilter !== "all") && (
             <div className="px-4 pb-3 border-t border-gray-100 dark:border-gray-800 pt-3">
               <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
@@ -907,7 +782,6 @@ const InventoryPage: React.FC = () => {
                   Filters:
                 </span>
 
-                {/* SEARCH CHIP */}
                 {searchTerm && (
                   <div className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs shrink-0">
                     <Search className="w-3.5 h-3.5" />
@@ -923,7 +797,6 @@ const InventoryPage: React.FC = () => {
                   </div>
                 )}
 
-                {/* GROUP CHIP */}
                 {selectedGroup && (
                   <div className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs shrink-0">
                     <Layers className="w-3.5 h-3.5" />
@@ -942,7 +815,6 @@ const InventoryPage: React.FC = () => {
                   </div>
                 )}
 
-                {/* STOCK CHIP */}
                 {stockFilter !== "all" && (
                   <div
                     className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs shrink-0 ${
@@ -968,7 +840,6 @@ const InventoryPage: React.FC = () => {
                   </div>
                 )}
 
-                {/* CLEAR ALL - Only show if more than one filter */}
                 {(searchTerm ? 1 : 0) +
                   (selectedGroup ? 1 : 0) +
                   (stockFilter !== "all" ? 1 : 0) >
@@ -989,11 +860,13 @@ const InventoryPage: React.FC = () => {
           )}
         </div>
 
-        {/* Products List - Two Column Grid with dynamic padding AND GAP */}
         <div
           className="p-4 transition-[padding-top] duration-300 ease-in-out"
-          style={{ 
-            paddingTop: `${Math.max(headerHeight, safeAreaHeight > 0 ? safeAreaHeight + 64 : 72)}px`
+          style={{
+            paddingTop: `${Math.max(
+              headerHeight,
+              safeAreaHeight > 0 ? safeAreaHeight + 64 : 72
+            )}px`,
           }}
         >
           {filteredProducts.length === 0 ? (
@@ -1002,116 +875,173 @@ const InventoryPage: React.FC = () => {
               <p className="text-gray-500 dark:text-gray-400">
                 {searchTerm ? "No products found" : "No products available"}
               </p>
-              {searchTerm && (
+              {searchTerm ? (
                 <button
                   onClick={() => setSearchTerm("")}
                   className="mt-4 px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors"
                 >
                   Clear Search
                 </button>
+              ) : (
+                hasMore &&
+                !dataLoading && (
+                  <button
+                    onClick={handleLoadMore}
+                    className="mt-4 px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2 mx-auto"
+                  >
+                    <ChevronDown className="w-4 h-4" />
+                    Load Products
+                  </button>
+                )
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
-              {" "}
-              {/* Increased gap from 3 to 4 */}
-              {filteredProducts.map((product) => {
-                const imageUrl = getImageUrl(product);
-                return (
-                  <div
-                    key={product.id}
-                    onClick={() => handleViewHistory(product)} // CARD CLICK → HISTORY
-                    className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow duration-200 cursor-pointer"
-                  >
-                    {/* Product Image */}
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
+                {filteredProducts.map((product) => {
+                  const imageUrl = product.imageUrl;
+                  return (
                     <div
-                      onClick={(e) => handleImageClick(product, e)} // IMAGE CLICK → IMAGE
-                      className="w-full aspect-square bg-gray-100 dark:bg-gray-800 relative overflow-hidden"
+                      key={product.id}
+                      onClick={() => handleViewHistory(product)}
+                      className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow duration-200 cursor-pointer"
                     >
-                      {imageUrl ? (
-                        <>
-                          {!imageLoaded[product.id] && (
-                            <div className="absolute inset-0 bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                      {/* IMAGE */}
+                      <div
+                        onClick={(e) => handleImageClick(product, e)}
+                        className="w-full aspect-square bg-gray-100 dark:bg-gray-800 relative overflow-hidden"
+                      >
+                        {imageUrl ? (
+                          <>
+                            {!imageLoaded[product.id] && (
+                              <div className="absolute inset-0 bg-gray-200 dark:bg-gray-700 animate-pulse" />
+                            )}
+
+                            <img
+                              src={imageUrl}
+                              alt={product.productName}
+                              className={`w-full h-full object-cover ${
+                                imageLoaded[product.id]
+                                  ? "opacity-100"
+                                  : "opacity-0"
+                              } transition-opacity duration-300`}
+                              onLoad={() => handleImageLoad(product.id)}
+                              loading="lazy"
+                            />
+
+                            <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors flex items-center justify-center">
+                              <ImageIcon className="w-5 h-5 text-white opacity-0 hover:opacity-100 transition-opacity" />
+                            </div>
+                          </>
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <Package className="w-10 h-10 text-gray-400 dark:text-gray-600" />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* CONTENT */}
+                      <div className="p-4 flex-1 flex flex-col p-4 flex-1 flex flex-col dark:bg-neutral-950">
+                        <h3 className="font-semibold text-sm mb-1 line-clamp-2 min-h-[2.5rem]">
+                          {product.productName}
+                        </h3>
+
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                          Code: {product.productId}
+                        </p>
+
+                        <div className="mt-auto">
+                          {/* INVENTORY VALUE (rate × stock) */}
+                          {product?.rate != null && (
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                                Value
+                              </span>
+                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                ₹
+                                {Math.round(
+                                  product.rate * product.stock
+                                ).toLocaleString("en-IN")}
+                              </span>
+                            </div>
                           )}
 
-                          <img
-                            src={imageUrl}
-                            alt={product.productName}
-                            className={`w-full h-full object-cover ${
-                              imageLoaded[product.id]
-                                ? "opacity-100"
-                                : "opacity-0"
-                            } transition-opacity duration-300`}
-                            onLoad={() => handleImageLoad(product.id)}
-                            loading="lazy"
-                            crossOrigin="anonymous"
-                          />
-
-                          <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors flex items-center justify-center">
-                            <ImageIcon className="w-5 h-5 text-white opacity-0 hover:opacity-100 transition-opacity" />
+                          {/* STOCK */}
+                          <div className="flex items-center justify-between mb-4">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              Stock
+                            </span>
+                            <span
+                              className={`text-sm font-bold ${
+                                product.stock === 0
+                                  ? "text-red-600 dark:text-red-400"
+                                  : product.stock <= 10
+                                  ? "text-orange-600 dark:text-orange-400"
+                                  : "text-green-600 dark:text-green-400"
+                              }`}
+                            >
+                              {product.stock.toFixed(2)} {product.unit}
+                            </span>
                           </div>
-                        </>
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Package className="w-10 h-10 text-gray-400 dark:text-gray-600" />
-                        </div>
-                      )}
-                    </div>
 
-                    {/* Product Info */}
-                    <div className="p-4 flex-1 flex flex-col">
-                      <h3 className="font-semibold text-sm mb-1 line-clamp-2 min-h-[2.5rem]">
-                        {product.productName}
-                      </h3>
-
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                        Code: {product.productId}
-                      </p>
-
-                      {/* Stock */}
-                      <div className="mt-auto">
-                        <div className="flex items-center justify-between mb-4">
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            Stock
-                          </span>
-                          <span
-                            className={`text-sm font-bold ${
-                              product.stock === 0
-                                ? "text-red-600 dark:text-red-400"
-                                : product.stock <= 10
-                                ? "text-orange-600 dark:text-orange-400"
-                                : "text-green-600 dark:text-green-400"
-                            }`}
+                          {/* ADJUST BUTTON */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedProduct(product);
+                              setShowAdjustModal(true);
+                            }}
+                            className="w-full py-2.5
+bg-gray-100 hover:bg-gray-200
+dark:bg-neutral-800 dark:hover:bg-neutral-700
+text-gray-900 dark:text-gray-200
+border border-gray-200 dark:border-neutral-700
+rounded-lg text-xs font-medium
+active:scale-95 transition-all duration-200
+flex items-center justify-center gap-1.5
+"
                           >
-                            {product.stock.toFixed(2)} {product.unit}
-                          </span>
+                            <Edit className="w-3.5 h-3.5" />
+                            Adjust
+                          </button>
                         </div>
-
-                        {/* Adjust Button ONLY */}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation(); // ⛔ prevent history click
-                            setSelectedProduct(product);
-                            setShowAdjustModal(true);
-                          }}
-                          className="w-full py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-medium active:scale-95 transition-all duration-200 flex items-center justify-center gap-1.5"
-                        >
-                          <Edit className="w-3.5 h-3.5" />
-                          Adjust
-                        </button>
                       </div>
                     </div>
+                  );
+                })}
+              </div>
+
+              {/* Load More Button - Only show when no filters are active */}
+              {hasMore &&
+                !searchTerm &&
+                selectedGroup === null &&
+                stockFilter === "all" && (
+                  <div className="flex justify-center mt-8">
+                    <button
+                      onClick={handleLoadMore}
+                      disabled={chunkLoading}
+                      className="px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {chunkLoading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Loading...
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown className="w-4 h-4" />
+                          Load More Products
+                        </>
+                      )}
+                    </button>
                   </div>
-                );
-              })}
-            </div>
+                )}
+            </>
           )}
         </div>
 
-        {/* Simplified Image Modal */}
         {showImageModal && selectedProduct && (
           <div className="fixed inset-0 z-50">
-            {/* Backdrop */}
             <div
               className="absolute inset-0 bg-black/90 dark:bg-black/90"
               onClick={() => {
@@ -1120,17 +1050,14 @@ const InventoryPage: React.FC = () => {
               }}
             />
 
-            {/* Image Container */}
             <div className="absolute inset-0 flex items-center justify-center p-4">
               <img
-                src={getImageUrl(selectedProduct) || selectedProduct.imageUrl}
+                src={selectedProduct.imageUrl}
                 alt={selectedProduct.productName}
                 className="max-w-full max-h-full object-contain rounded-lg"
-                crossOrigin="anonymous"
               />
             </div>
 
-            {/* Close Button at Bottom */}
             <button
               onClick={() => {
                 setShowImageModal(false);
@@ -1143,10 +1070,8 @@ const InventoryPage: React.FC = () => {
           </div>
         )}
 
-        {/* Adjust Stock Modal - Mobile Bottom Sheet */}
         {showAdjustModal && selectedProduct && (
           <div className="fixed inset-0 z-50">
-            {/* Backdrop */}
             <div
               className="absolute inset-0 bg-black/70 dark:bg-black/70"
               onClick={() => {
@@ -1157,14 +1082,11 @@ const InventoryPage: React.FC = () => {
               }}
             />
 
-            {/* Modal Sheet */}
-            <div className="absolute bottom-0 left-0 right-0 bg-white dark:bg-gray-900 rounded-t-3xl max-h-[85vh] overflow-hidden border-t border-gray-200 dark:border-gray-800">
-              {/* Handle */}
+            <div className="absolute bottom-0 left-0 right-0 bg-white dark:bg-neutral-950 rounded-t-3xl max-h-[90vh] overflow-hidden border-t border-neutral-200 dark:border-neutral-800">
               <div className="flex justify-center pt-2">
                 <div className="w-12 h-1 bg-gray-300 dark:bg-gray-700 rounded-full"></div>
               </div>
 
-              {/* Header */}
               <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800">
                 <div className="flex items-center justify-between">
                   <h2 className="text-lg font-bold">Adjust Stock</h2>
@@ -1186,7 +1108,6 @@ const InventoryPage: React.FC = () => {
               </div>
 
               <div className="p-4 overflow-y-auto max-h-[60vh]">
-                {/* Current Stock */}
                 <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl">
                   <div className="flex justify-between items-center">
                     <div>
@@ -1216,7 +1137,6 @@ const InventoryPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Adjust Type */}
                 <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-xl mb-6">
                   <button
                     onClick={() => setAdjustType("add")}
@@ -1242,7 +1162,6 @@ const InventoryPage: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Quantity Input */}
                 <div className="mb-6">
                   <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
                     Quantity
@@ -1262,7 +1181,6 @@ const InventoryPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Note */}
                 <div className="mb-6">
                   <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
                     Note (Optional)
@@ -1276,7 +1194,6 @@ const InventoryPage: React.FC = () => {
                   />
                 </div>
 
-                {/* Action Buttons */}
                 <div className="flex gap-3">
                   <button
                     onClick={() => {
@@ -1302,10 +1219,8 @@ const InventoryPage: React.FC = () => {
           </div>
         )}
 
-        {/* History Modal - Mobile Bottom Sheet */}
         {showHistoryModal && selectedProduct && (
           <div className="fixed inset-0 z-50">
-            {/* Backdrop */}
             <div
               className="absolute inset-0 bg-black/70 dark:bg-black/70"
               onClick={() => {
@@ -1315,14 +1230,11 @@ const InventoryPage: React.FC = () => {
               }}
             />
 
-            {/* Modal Sheet */}
-            <div className="absolute bottom-0 left-0 right-0 bg-white dark:bg-gray-900 rounded-t-3xl max-h-[85vh] overflow-hidden border-t border-gray-200 dark:border-gray-800">
-              {/* Handle */}
+            <div className="absolute bottom-0 left-0 right-0 bg-white dark:bg-neutral-950 rounded-t-3xl max-h-[90vh] overflow-hidden border-t border-neutral-200 dark:border-neutral-800">
               <div className="flex justify-center pt-2">
                 <div className="w-12 h-1 bg-gray-300 dark:bg-gray-700 rounded-full"></div>
               </div>
 
-              {/* Header */}
               <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800">
                 <div className="flex items-center justify-between">
                   <div>
@@ -1345,7 +1257,7 @@ const InventoryPage: React.FC = () => {
               </div>
 
               <div className="p-4 overflow-y-auto max-h-[60vh]">
-                {loading ? (
+                {uiLoading ? (
                   <div className="text-center py-8">
                     <div className="w-12 h-12 border-4 border-gray-200 dark:border-gray-800 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
                     <p className="text-gray-500 dark:text-gray-400">
@@ -1364,7 +1276,7 @@ const InventoryPage: React.FC = () => {
                     {productTransactions.map((transaction) => (
                       <div
                         key={transaction.id}
-                        className="p-3 bg-gray-50 dark:bg-gray-800 rounded-xl"
+                        className="p-3 bg-gray-50 dark:bg-neutral-900 rounded-xl"
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex items-center gap-3">
@@ -1418,7 +1330,7 @@ const InventoryPage: React.FC = () => {
                         </div>
 
                         {transaction.note && (
-                          <p className="text-sm text-gray-700 dark:text-gray-300 mb-3 p-2 bg-white/50 dark:bg-gray-900/50 rounded-lg">
+                          <p className="text-sm text-gray-700 dark:text-gray-300 mb-3 p-2 bg-white/50 dark:bg-neutral-900/50 rounded-lg">
                             {transaction.note}
                           </p>
                         )}

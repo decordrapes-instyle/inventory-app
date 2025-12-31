@@ -1,36 +1,22 @@
-import React, { useState } from "react";
+import React from "react";
 import { useAuth } from "../context/AuthContext";
-import { useNavigate } from "react-router-dom";
+import { useNavigation } from "../context/NavigationContext";
 import {
   ArrowLeft,
   User,
   Moon,
   Sun,
   Edit3,
-  RefreshCw,
-  CheckCircle,
-  AlertCircle,
-  Database,
   Github,
   Instagram,
   MessageCircle,
   LinkedinIcon,
 } from "lucide-react";
 import { setDarkStatusBar, setLightStatusBar } from "../statusBar";
-import { ref, get } from "firebase/database";
-import { database } from "../config/firebase";
-import toast from "react-hot-toast";
 
 const ProfilePage: React.FC = () => {
   const { userProfile, logout, darkMode, updateDarkMode } = useAuth();
-  const navigate = useNavigate();
-
-  const [syncing, setSyncing] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<
-    "synced" | "mismatch" | "checking" | "error"
-  >("checking");
-  const [localCount, setLocalCount] = useState<number | null>(null);
-  const [serverCount, setServerCount] = useState<number | null>(null);
+  const { navigate, goBack } = useNavigation();
 
   const toggleDarkMode = () => {
     if (darkMode === "dark") {
@@ -42,114 +28,24 @@ const ProfilePage: React.FC = () => {
     }
   };
 
-  // Check sync status by comparing local vs server item counts
-  const checkSyncStatus = async () => {
-    setSyncing(true);
-    setSyncStatus("checking");
-
-    try {
-      // Get local count from localStorage (set by InventoryPage)
-      const localData = localStorage.getItem("inventory_items");
-      let localItemCount = 0;
-
-      if (localData) {
-        try {
-          const items = JSON.parse(localData);
-          localItemCount = items.length;
-        } catch (e) {
-          console.error("Error parsing local inventory:", e);
-        }
-      }
-      setLocalCount(localItemCount);
-
-      // Get server count from Firebase
-      const inventoryRef = ref(database, "quotations/manualInventory");
-      const snapshot = await get(inventoryRef);
-      let serverItemCount = 0;
-
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        serverItemCount = Object.keys(data).length;
-      }
-      setServerCount(serverItemCount);
-
-      if (localItemCount === serverItemCount) {
-        setSyncStatus("synced");
-      } else {
-        setSyncStatus("mismatch");
-      }
-    } catch (error) {
-      console.error("Sync check error:", error);
-      setSyncStatus("error");
-      toast.error("Failed to check sync");
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  const hardRefresh = () => {
-    setSyncing(true);
-
-    try {
-      localStorage.removeItem("inventory_items");
-
-      const imageCacheKeys = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key?.includes("inventory_image") || key?.includes("image_cache")) {
-          imageCacheKeys.push(key);
-        }
-      }
-
-      imageCacheKeys.forEach((key) => {
-        localStorage.removeItem(key);
-      });
-
-      toast.success("Cache cleared");
-
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
-    } catch (error) {
-      console.error("Hard refresh error:", error);
-      toast.error("Failed to refresh");
-      setSyncing(false);
-    }
-  };
 
   const handleLogout = async () => {
     await logout();
     navigate("/login");
   };
 
-  React.useEffect(() => {
-    checkSyncStatus();
-  }, []);
 
   return (
     <div className="pt-3 min-h-screen bg-white dark:bg-black pb-24">
       <div className="pt-safe flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-900">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate(-1)}>
+          <button onClick={goBack}>
             <ArrowLeft className="w-5 h-5 text-gray-500 dark:text-gray-400" />
           </button>
           <h1 className="text-lg font-semibold text-gray-900 dark:text-white">
             Profile
           </h1>
         </div>
-
-        {/* Refresh Button */}
-        <button
-          onClick={checkSyncStatus}
-          disabled={syncing}
-          className="p-2 rounded-lg bg-gray-100 dark:bg-gray-900 disabled:opacity-50"
-        >
-          <RefreshCw
-            className={`w-5 h-5 text-gray-600 dark:text-gray-400 ${
-              syncing ? "animate-spin" : ""
-            }`}
-          />
-        </button>
       </div>
 
       {/* Profile */}
@@ -183,49 +79,7 @@ const ProfilePage: React.FC = () => {
 
       {/* Settings */}
       <div className="px-4 space-y-3">
-        {/* Sync Status - Simple Message */}
-        {syncStatus === "synced" && (
-          <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl flex items-center justify-center gap-2">
-            <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
-            <span className="text-green-700 dark:text-green-300 font-medium">
-              Synced • {localCount} items
-            </span>
-          </div>
-        )}
-
-        {syncStatus === "mismatch" && (
-          <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-xl">
-            <div className="flex items-center gap-3 mb-3">
-              <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
-              <div>
-                <p className="font-medium text-red-700 dark:text-red-300">
-                  Sync Mismatch
-                </p>
-                <p className="text-sm text-red-600 dark:text-red-400">
-                  Local: {localCount} items • Server: {serverCount} items
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={hardRefresh}
-              disabled={syncing}
-              className="w-full py-3 bg-red-500 hover:bg-red-600 disabled:bg-red-400 text-white rounded-lg font-medium flex items-center justify-center gap-2"
-            >
-              <Database className="w-4 h-4" />
-              {syncing ? "Refreshing..." : "Hard Refresh"}
-            </button>
-          </div>
-        )}
-
-        {syncStatus === "error" && (
-          <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl flex items-center justify-center gap-2">
-            <AlertCircle className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
-            <span className="text-yellow-700 dark:text-yellow-300 font-medium">
-              Error checking sync
-            </span>
-          </div>
-        )}
-
+        
         {/* Dark Mode Toggle */}
         <button
           onClick={toggleDarkMode}
@@ -237,20 +91,7 @@ const ProfilePage: React.FC = () => {
           {darkMode === "dark" ? <Moon /> : <Sun />}
         </button>
 
-        {/* Simple Hard Refresh Button at Bottom */}
-        <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-800">
-          <button
-            onClick={hardRefresh}
-            disabled={syncing}
-            className="w-full py-3 bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-xl font-medium flex items-center justify-center gap-2"
-          >
-            <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} />
-            {syncing ? "Refreshing..." : "Hard Refresh App"}
-          </button>
-          <p className="text-xs text-gray-500 dark:text-gray-400 text-center mt-2">
-            Clears cache and reloads data
-          </p>
-        </div>
+       
 
         <button
           onClick={handleLogout}

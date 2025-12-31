@@ -1,13 +1,13 @@
 // src/pages/EditProfilePage.tsx
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigation } from '../context/NavigationContext';
 import { ArrowLeft, Camera } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const EditProfilePage: React.FC = () => {
   const { userProfile, updateProfile } = useAuth();
-  const navigate = useNavigate();
+  const { navigate, goBack } = useNavigation();
 
   const [displayName, setDisplayName] = useState(userProfile?.displayName || '');
   const [profileImage, setProfileImage] = useState(userProfile?.profileImage || '');
@@ -42,7 +42,7 @@ const EditProfilePage: React.FC = () => {
       {/* Header */}
       <div className=" pt-safe sticky top-0 z-10 bg-white dark:bg-black border-b border-gray-200 dark:border-gray-900 px-4 py-3 flex items-center gap-3">
         <button
-          onClick={() => navigate(-1)}
+          onClick={goBack}
           className="p-2 text-gray-500 dark:text-gray-400"
         >
           <ArrowLeft className="w-5 h-5" />

@@ -1,3 +1,9 @@
 npm run build
+npx @capacitor/assets generate
 npx cap sync android
 npx cap open android
+
+{NEW}
+add one more tab if user role is admin that tab shows total inventory value perproduct have rate in it too some of them does not so do not make the rate compulsory and show total converted amout (rate x unitvalue) in the cards in formetted way production role will see only 4 tab that is home fabrics alerts profile but adminsee 5 a Stock too
+@src add one more tab if user role is admin that tab shows total inventory value perproduct have rate in it too some of them does not so do not make the rate compulsory and show total converted amout (rate x unitvalue) in the cards in formetted way production role will see only 4 tab that is home fabrics alerts profile but adminsee 5 a Stock too and make this realtime while seperate all database listner to seperate file the page will show ui only it will not call api
+

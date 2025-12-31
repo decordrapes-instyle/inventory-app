@@ -1,16 +1,49 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { ref, push, set, get, update, onValue, off } from 'firebase/database';
-import { database } from '../config/firebase';
-import { 
-  Search, Package, History, ArrowLeft,
-  TrendingUp, TrendingDown, Layers,
-  Plus, Minus, Filter, X, Check,
-  Clock, User} from 'lucide-react';
-import toast, { Toaster } from 'react-hot-toast';
+import React, { useState, useEffect, useRef } from "react";
+import { useNavigation } from "../context/NavigationContext";
+import { useAuth } from "../context/AuthContext";
+import { loadFirebase } from "../config/firebaseLoader";
+const { ref, push, set, get, update, onValue, off } = await loadFirebase();
+import { database } from "../config/firebase";
+import {
+  Search,
+  Package,
+  History,
+  ArrowLeft,
+  TrendingUp,
+  TrendingDown,
+  Layers,
+  Plus,
+  Minus,
+  Filter,
+  X,
+  Check,
+  Clock,
+  User,
+  IndianRupee as DollarSign,
+  Calculator,
+} from "lucide-react";
+import toast, { Toaster } from "react-hot-toast";
 
-type InventoryUnit = 'piece' | 'meter' | 'foot' | 'length' | 'box' | 'sqft' | 'pcs' | 'kgs' | 'pkt' | 'roll' | 'set' | 'carton' | 'bundle' | 'dozen' | 'kg' | 'inch' | 'cm' | 'mm';
+
+type InventoryUnit =
+  | "piece"
+  | "meter"
+  | "foot"
+  | "length"
+  | "box"
+  | "sqft"
+  | "pcs"
+  | "kgs"
+  | "pkt"
+  | "roll"
+  | "set"
+  | "carton"
+  | "bundle"
+  | "dozen"
+  | "kg"
+  | "inch"
+  | "cm"
+  | "mm";
 
 interface Product {
   id: string;
@@ -19,9 +52,11 @@ interface Product {
   stock: number;
   unit: InventoryUnit;
   notes?: string;
+  cost?: number | null;
   createdAt: number;
   updatedAt: number;
   category?: string;
+  stockValue?: number; // Added for calculated stock value
 }
 
 interface Transaction {
@@ -30,7 +65,7 @@ interface Transaction {
   productName: string;
   quantityChange: number;
   unit: InventoryUnit;
-  source: 'quotation' | 'manual' | 'purchase';
+  source: "quotation" | "manual" | "purchase";
   quotationId?: string;
   purchaseId?: string;
   note?: string;
@@ -39,6 +74,7 @@ interface Transaction {
 }
 
 interface InventoryGroup {
+  imageUrl?: string;
   id: string;
   name: string;
   description?: string;
@@ -47,28 +83,31 @@ interface InventoryGroup {
     productName: string;
     unit: InventoryUnit;
     addedAt: number;
-    inventoryType: 'product' | 'manual';
+    inventoryType: "product" | "manual";
   }>;
   createdAt: number;
   updatedAt: number;
 }
 
 const AutoInventoryPage: React.FC = () => {
-  const navigate = useNavigate();
+  const { goBack } = useNavigation();
   const { user } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showAdjustModal, setShowAdjustModal] = useState(false);
-  const [productTransactions, setProductTransactions] = useState<Transaction[]>([]);
+  const [productTransactions, setProductTransactions] = useState<Transaction[]>(
+    []
+  );
   const [loading, setLoading] = useState(true);
-  const [adjustQuantity, setAdjustQuantity] = useState('');
-  const [adjustNote, setAdjustNote] = useState('');
-  const [adjustType, setAdjustType] = useState<'add' | 'reduce'>('add');
-  const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'out'>('all');
+  const [adjustQuantity, setAdjustQuantity] = useState("");
+  const [adjustNote, setAdjustNote] = useState("");
+  const [adjustType, setAdjustType] = useState<"add" | "reduce">("add");
+  const [stockFilter, setStockFilter] = useState<"all" | "low" | "out">("all");
   const [inventoryGroups, setInventoryGroups] = useState<InventoryGroup[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
+  const [productsCostMap, setProductsCostMap] = useState<Record<string, number>>({});
   const searchInputRef = useRef<HTMLInputElement>(null);
   const adjustInputRef = useRef<HTMLInputElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -81,73 +120,79 @@ const AutoInventoryPage: React.FC = () => {
   const [showStockFilter, setShowStockFilter] = useState(false);
   const lastScrollY = useRef(0);
 
-
   // Add this custom hook at the top of your component (before the InventoryPage function)
-const useSafeAreaHeight = () => {
-  const [safeAreaHeight, setSafeAreaHeight] = useState(0);
+  const useSafeAreaHeight = () => {
+    const [safeAreaHeight, setSafeAreaHeight] = useState(0);
+
+    useEffect(() => {
+      const calculateSafeArea = () => {
+        // Create a test element to measure safe area
+        const testEl = document.createElement("div");
+        testEl.style.position = "fixed";
+        testEl.style.top = "0";
+        testEl.style.left = "0";
+        testEl.style.width = "0";
+        testEl.style.height = "0";
+        testEl.style.paddingTop = "env(safe-area-inset-top)";
+        testEl.style.visibility = "hidden";
+        document.body.appendChild(testEl);
+
+        const computedStyle = window.getComputedStyle(testEl);
+        const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
+
+        document.body.removeChild(testEl);
+        return paddingTop;
+      };
+
+      // Calculate after mount
+      const timer = setTimeout(() => {
+        const height = calculateSafeArea();
+        setSafeAreaHeight(height);
+      }, 100);
+
+      return () => clearTimeout(timer);
+    }, []);
+
+    return safeAreaHeight;
+  };
+
+  // Then in your InventoryPage component, add:
+  const safeAreaHeight = useSafeAreaHeight();
 
   useEffect(() => {
-    const calculateSafeArea = () => {
-      // Create a test element to measure safe area
-      const testEl = document.createElement('div');
-      testEl.style.position = 'fixed';
-      testEl.style.top = '0';
-      testEl.style.left = '0';
-      testEl.style.width = '0';
-      testEl.style.height = '0';
-      testEl.style.paddingTop = 'env(safe-area-inset-top)';
-      testEl.style.visibility = 'hidden';
-      document.body.appendChild(testEl);
-      
-      const computedStyle = window.getComputedStyle(testEl);
-      const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
-      
-      document.body.removeChild(testEl);
-      return paddingTop;
-    };
-
-    // Calculate after mount
-    const timer = setTimeout(() => {
-      const height = calculateSafeArea();
-      setSafeAreaHeight(height);
-    }, 100);
-
-    return () => clearTimeout(timer);
-  }, []);
-
-  return safeAreaHeight;
-};
-
-// Then in your InventoryPage component, add:
-const safeAreaHeight = useSafeAreaHeight();
-
-useEffect(() => {
     const updateHeaderHeight = () => {
       if (headerRef.current) {
         const height = headerRef.current.getBoundingClientRect().height;
-        setHeaderHeight(height+8);
+        setHeaderHeight(height + 8);
       }
     };
 
     updateHeaderHeight();
-    
+
     const observer = new ResizeObserver(updateHeaderHeight);
     if (headerRef.current) {
       observer.observe(headerRef.current);
     }
-    
+
     return () => observer.disconnect();
-  }, [ showSearchInput, showGroupFilter, showStockFilter, stockFilter, searchTerm, selectedGroup]);
-;
+  }, [
+    showSearchInput,
+    showGroupFilter,
+    showStockFilter,
+    stockFilter,
+    searchTerm,
+    selectedGroup,
+  ]);
   // Measure header height
-  
+
   // Handle scroll to hide/show header
   useEffect(() => {
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
 
       // Don't hide header if any filter is expanded
-      const isFilterExpanded = showGroupFilter || showStockFilter || showSearchInput;
+      const isFilterExpanded =
+        showGroupFilter || showStockFilter || showSearchInput;
       if (isFilterExpanded) {
         setShowHeader(true);
         return;
@@ -166,72 +211,121 @@ useEffect(() => {
     return () => window.removeEventListener("scroll", handleScroll);
   }, [showGroupFilter, showStockFilter, showSearchInput]);
 
-  // Fetch products and groups
+  // Fetch products, groups, and costs
   useEffect(() => {
     setLoading(true);
     setShowSearchInput(true);
     setShowSearchInput(false);
-    
-    const productsRef = ref(database, 'quotations/inventory');
-    const groupsRef = ref(database, 'quotations/inventoryGrp');
+
+    const productsRef = ref(database, "quotations/inventory");
+    const groupsRef = ref(database, "quotations/inventoryGrp");
+    const productsCostRef = ref(database, "quotations/products");
 
     // Fetch products
-    const productsListener = onValue(productsRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        const productList: Product[] = Object.entries(data).map(([key, value]: any) => ({
-          id: key,
-          productId: value.productId || '',
-          productName: value.productName || 'Unnamed Product',
-          stock: value.stock || 0,
-          unit: value.unit || 'pcs',
-          notes: value.notes,
-          category: value.category,
-          createdAt: value.createdAt || 0,
-          updatedAt: value.updatedAt || 0,
-        })).sort((a, b) => b.updatedAt - a.updatedAt);
-        setProducts(productList);
-      } else {
-        setProducts([]);
+    const productsListener = onValue(
+      productsRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.val();
+          const productList: Product[] = Object.entries(data)
+            .map(([key, value]: any) => ({
+              id: key,
+              productId: value.productId || "",
+              productName: value.productName || "Unnamed Product",
+              stock: value.stock || 0,
+              unit: value.unit || "pcs",
+              notes: value.notes,
+              category: value.category,
+              cost: value.cost,
+              createdAt: value.createdAt || 0,
+              updatedAt: value.updatedAt || 0,
+            }))
+            .sort((a, b) => b.updatedAt - a.updatedAt);
+          setProducts(productList);
+        } else {
+          setProducts([]);
+        }
+      },
+      (error) => {
+        console.error("Firebase error:", error);
+        toast.error("Failed to load products");
       }
-    }, (error) => {
-      console.error("Firebase error:", error);
-      toast.error("Failed to load products");
-    });
+    );
+
+    // Fetch product costs from quotations/products
+    const productsCostListener = onValue(
+      productsCostRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.val();
+          const costMap: Record<string, number> = {};
+          Object.entries(data).forEach(([productId, productData]: [string, any]) => {
+            if (productData && typeof productData.cost === 'number') {
+              costMap[productId] = productData.cost;
+            }
+          });
+          setProductsCostMap(costMap);
+        } else {
+          setProductsCostMap({});
+        }
+      },
+      (error) => {
+        console.error("Firebase cost error:", error);
+        setProductsCostMap({});
+      }
+    );
 
     // Fetch groups - Filter only groups with inventoryType "product"
-    const groupsListener = onValue(groupsRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        const groupsList: InventoryGroup[] = Object.entries(data).map(
-          ([key, value]: any) => ({
-            id: key,
-            ...value,
-          })
-        );
-        
-        const filteredGroups = groupsList.filter(group => {
-          if (!group.items || !Array.isArray(group.items)) return false;
-          
-          return group.items.some(item => item.inventoryType === "product");
-        });
-        
-        setInventoryGroups(filteredGroups);
-      } else {
+    const groupsListener = onValue(
+      groupsRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.val();
+          const groupsList: InventoryGroup[] = Object.entries(data).map(
+            ([key, value]: any) => ({
+              id: key,
+              ...value,
+            })
+          );
+
+          const filteredGroups = groupsList.filter((group) => {
+            if (!group.items || !Array.isArray(group.items)) return false;
+
+            return group.items.some((item) => item.inventoryType === "product");
+          });
+
+          setInventoryGroups(filteredGroups);
+        } else {
+          setInventoryGroups([]);
+        }
+        setLoading(false);
+      },
+      (error) => {
+        console.error("Firebase groups error:", error);
         setInventoryGroups([]);
+        setLoading(false);
       }
-      setLoading(false);
-    }, (error) => {
-      console.error("Firebase groups error:", error);
-      setInventoryGroups([]);
-      setLoading(false);
-    });
+    );
 
     return () => {
-      off(productsRef, 'value', productsListener);
-      off(groupsRef, 'value', groupsListener);
+      off(productsRef, "value", productsListener);
+      off(groupsRef, "value", groupsListener);
+      off(productsCostRef, "value", productsCostListener);
     };
   }, []);
+
+  // Calculate stock value for products when costs are loaded
+  useEffect(() => {
+    if (Object.keys(productsCostMap).length > 0) {
+      setProducts(prevProducts => 
+        prevProducts.map(product => ({
+          ...product,
+          cost: productsCostMap[product.productId] || product.cost || null,
+          stockValue: (productsCostMap[product.productId] || product.cost || 0) * product.stock
+        }))
+      );
+    }
+  }, [productsCostMap]);
 
   // Keep focus for adjust modal when it opens
   useEffect(() => {
@@ -243,13 +337,18 @@ useEffect(() => {
   }, [showAdjustModal]);
 
   useEffect(() => {
-    if (showHistoryModal || showAdjustModal || showGroupFilter || showStockFilter) {
-      document.body.style.overflow = 'hidden';
+    if (
+      showHistoryModal ||
+      showAdjustModal ||
+      showGroupFilter ||
+      showStockFilter
+    ) {
+      document.body.style.overflow = "hidden";
     } else {
-      document.body.style.overflow = 'auto';
+      document.body.style.overflow = "auto";
     }
     return () => {
-      document.body.style.overflow = 'auto';
+      document.body.style.overflow = "auto";
     };
   }, [showHistoryModal, showAdjustModal, showGroupFilter, showStockFilter]);
 
@@ -287,28 +386,31 @@ useEffect(() => {
   const handleAdjustStock = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProduct || !adjustQuantity) {
-      toast.error('Please enter a quantity');
+      toast.error("Please enter a quantity");
       return;
     }
 
     try {
       let quantityChange = parseFloat(adjustQuantity);
-      
+
       if (isNaN(quantityChange) || quantityChange <= 0) {
-        toast.error('Please enter a valid positive quantity');
+        toast.error("Please enter a valid positive quantity");
         return;
       }
 
-      if (adjustType === 'reduce') {
+      if (adjustType === "reduce") {
         quantityChange = -quantityChange;
       }
 
-      const productRef = ref(database, `quotations/inventory/${selectedProduct.id}`);
+      const productRef = ref(
+        database,
+        `quotations/inventory/${selectedProduct.id}`
+      );
       const snapshot = await get(productRef);
       const currentProduct = snapshot.val();
-      
+
       if (!currentProduct) {
-        toast.error('Product not found');
+        toast.error("Product not found");
         return;
       }
 
@@ -316,22 +418,26 @@ useEffect(() => {
       const newStock = currentStock + quantityChange;
 
       if (newStock < 0) {
-        toast.error('Stock cannot be negative');
+        toast.error("Stock cannot be negative");
         return;
       }
 
-      const userInfo = user ? (user.displayName || user.email || user.uid) : 'Unknown User';
-      const finalNote = adjustNote ? 
-        `${adjustNote} (By: ${userInfo})` : 
-        `${quantityChange > 0 ? 'Added' : 'Removed'} stock (By: ${userInfo})`;
+      const userInfo = user
+        ? user.displayName || user.email || user.uid
+        : "Unknown User";
+      const finalNote = adjustNote
+        ? `${adjustNote} (By: ${userInfo})`
+        : `${quantityChange > 0 ? "Added" : "Removed"} stock (By: ${userInfo})`;
 
-      const transactionRef = push(ref(database, `quotations/inventoryTransactions/${selectedProduct.id}`));
+      const transactionRef = push(
+        ref(database, `quotations/inventoryTransactions/${selectedProduct.id}`)
+      );
       const transactionData = {
         productId: selectedProduct.productId,
         productName: selectedProduct.productName,
         quantityChange: quantityChange,
         unit: selectedProduct.unit,
-        source: 'manual',
+        source: "manual",
         note: finalNote,
         performedBy: userInfo,
         createdAt: Date.now(),
@@ -343,26 +449,31 @@ useEffect(() => {
         updatedAt: Date.now(),
       });
 
-      toast.success(`Stock ${quantityChange > 0 ? 'added' : 'removed'} successfully`);
-      
+      toast.success(
+        `Stock ${quantityChange > 0 ? "added" : "removed"} successfully`
+      );
+
       setShowAdjustModal(false);
-      setAdjustQuantity('');
-      setAdjustNote('');
+      setAdjustQuantity("");
+      setAdjustNote("");
       setSelectedProduct(null);
     } catch (err: any) {
-      console.error('Transaction error:', err);
-      toast.error(err.message || 'Failed to record transaction');
+      console.error("Transaction error:", err);
+      toast.error(err.message || "Failed to record transaction");
     }
   };
 
   const handleViewHistory = async (product: Product) => {
     setSelectedProduct(product);
     setLoading(true);
-    
+
     try {
-      const transactionsRef = ref(database, `quotations/inventoryTransactions/${product.id}`);
+      const transactionsRef = ref(
+        database,
+        `quotations/inventoryTransactions/${product.id}`
+      );
       const snapshot = await get(transactionsRef);
-      
+
       if (snapshot.exists()) {
         const data = snapshot.val();
         const transactionsList = Object.entries(data)
@@ -375,30 +486,32 @@ useEffect(() => {
       } else {
         setProductTransactions([]);
       }
-      
+
       setShowHistoryModal(true);
     } catch (err: any) {
-      console.error('Error loading transactions:', err);
-      toast.error('Failed to load transaction history');
+      console.error("Error loading transactions:", err);
+      toast.error("Failed to load transaction history");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleQuickAdjust = (product: Product, type: 'add' | 'reduce') => {
+  const handleQuickAdjust = (product: Product, type: "add" | "reduce") => {
     setSelectedProduct(product);
     setAdjustType(type);
-    setAdjustQuantity('');
-    setAdjustNote('');
+    setAdjustQuantity("");
+    setAdjustNote("");
     setShowAdjustModal(true);
   };
 
   const getGroupProducts = (groupId: string): Product[] => {
     const group = inventoryGroups.find((g) => g.id === groupId);
     if (!group) return [];
-    const productItems = group.items.filter(item => item.inventoryType === "product");
+    const productItems = group.items.filter(
+      (item) => item.inventoryType === "product"
+    );
     const groupProductIds = new Set(productItems.map((item) => item.productId));
-    
+
     return products.filter((product) => groupProductIds.has(product.productId));
   };
 
@@ -407,9 +520,9 @@ useEffect(() => {
     let filtered = selectedGroup ? getGroupProducts(selectedGroup) : products;
 
     // Apply stock filter
-    if (stockFilter === 'low') {
+    if (stockFilter === "low") {
       filtered = filtered.filter((p) => p.stock > 0 && p.stock <= 10);
-    } else if (stockFilter === 'out') {
+    } else if (stockFilter === "out") {
       filtered = filtered.filter((p) => p.stock === 0);
     }
 
@@ -428,21 +541,23 @@ useEffect(() => {
   const filteredProducts = getFilteredProducts();
 
   const getStockStatusColor = (stock: number) => {
-    if (stock === 0) return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300';
-    if (stock <= 10) return 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300';
-    return 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300';
+    if (stock === 0)
+      return "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300";
+    if (stock <= 10)
+      return "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300";
+    return "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300";
   };
 
   const getStockStatusText = (stock: number) => {
-    if (stock === 0) return 'Out of Stock';
-    if (stock <= 10) return 'Low Stock';
-    return 'In Stock';
+    if (stock === 0) return "Out of Stock";
+    if (stock <= 10) return "Low Stock";
+    return "In Stock";
   };
 
   const getStockColor = (stock: number) => {
-    if (stock === 0) return 'text-red-600 dark:text-red-400';
-    if (stock <= 10) return 'text-orange-600 dark:text-orange-400';
-    return 'text-green-600 dark:text-green-400';
+    if (stock === 0) return "text-red-600 dark:text-red-400";
+    if (stock <= 10) return "text-orange-600 dark:text-orange-400";
+    return "text-green-600 dark:text-green-400";
   };
 
   // Skeleton Loading
@@ -473,14 +588,15 @@ useEffect(() => {
 
   return (
     <>
-      <Toaster 
+      <Toaster
         position="top-center"
         toastOptions={{
-          className: 'dark:bg-gray-900 dark:text-white border border-gray-200 dark:border-gray-800',
+          className:
+            "dark:bg-gray-900 dark:text-white border border-gray-200 dark:border-gray-800",
           duration: 3000,
         }}
       />
-      
+
       <div className="min-h-screen bg-gray-50 dark:bg-black text-gray-900 dark:text-white pb-16">
         {/* HEADER */}
         <div
@@ -496,10 +612,7 @@ useEffect(() => {
           {/* TOP BAR */}
           <div className="flex items-center justify-between h-14 px-4">
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => navigate(-1)}
-                className="p-2 rounded-lg"
-              >
+              <button onClick={goBack} className="p-2 rounded-lg">
                 <ArrowLeft className="w-5 h-5" />
               </button>
               <h1 className="text-lg font-bold truncate">Fabric Inventory</h1>
@@ -510,9 +623,7 @@ useEffect(() => {
               <button
                 onClick={toggleSearch}
                 className={`p-2 rounded-lg transition-colors ${
-                  searchTerm || showSearchInput
-                    ? "bg-blue-500 text-white" 
-                    : ""
+                  searchTerm || showSearchInput ? "bg-blue-500 text-white" : ""
                 }`}
               >
                 <Search className="w-5 h-5" />
@@ -528,7 +639,7 @@ useEffect(() => {
                   }}
                   className={`p-2 rounded-lg transition-colors ${
                     selectedGroup || showGroupFilter
-                      ? "bg-purple-500 text-white" 
+                      ? "bg-purple-500 text-white"
                       : ""
                   }`}
                 >
@@ -544,8 +655,8 @@ useEffect(() => {
                   setShowSearchInput(false);
                 }}
                 className={`p-2 rounded-lg transition-colors ${
-                  stockFilter !== 'all' || showStockFilter
-                    ? "bg-orange-500 text-white" 
+                  stockFilter !== "all" || showStockFilter
+                    ? "bg-orange-500 text-white"
                     : ""
                 }`}
               >
@@ -578,39 +689,107 @@ useEffect(() => {
             </div>
           )}
 
-          {/* GROUP FILTER ROW - Grid layout */}
+          {/* GROUP FILTER ROW - Android style */}
           {showGroupFilter && inventoryGroups.length > 0 && (
-            <div className="px-4 pb-3" ref={groupFilterRef}>
-              <div className="grid grid-cols-2 gap-2">
+            <div
+              ref={groupFilterRef}
+              className="bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800"
+            >
+              <div className="flex gap-5 px-4 py-3 overflow-x-auto scrollbar-hide">
+                {/* ALL GROUPS */}
                 <button
+                  type="button"
                   onClick={() => {
                     setSelectedGroup(null);
                     setShowGroupFilter(false);
                   }}
-                  className={`py-3 px-3 rounded-xl text-left transition-all duration-200 ${
-                    !selectedGroup
-                      ? "bg-purple-500 text-white shadow-md"
-                      : "bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-800"
-                  }`}
+                  className="shrink-0 flex flex-col items-center min-w-[76px] transition-transform active:scale-[0.96]"
                 >
-                  <span className="font-medium truncate block">All Groups</span>
-                </button>
-                {inventoryGroups.map((group) => (
-                  <button
-                    key={group.id}
-                    onClick={() => {
-                      setSelectedGroup(group.id);
-                      setShowGroupFilter(false);
-                    }}
-                    className={`py-3 px-3 rounded-xl text-left transition-all duration-200 ${
-                      selectedGroup === group.id
-                        ? "bg-purple-500 text-white shadow-md"
-                        : "bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-800"
-                    }`}
+                  <div
+                    className={`w-14 h-14 rounded-full flex items-center justify-center mb-1
+            ${
+              !selectedGroup
+                ? "bg-purple-600 shadow-sm"
+                : "bg-gray-200 dark:bg-gray-800"
+            }`}
                   >
-                    <span className="font-medium truncate block">{group.name}</span>
-                  </button>
-                ))}
+                    <span
+                      className={`text-sm font-bold ${
+                        !selectedGroup ? "text-white" : "text-gray-600"
+                      }`}
+                    >
+                      ALL
+                    </span>
+                  </div>
+
+                  <span
+                    className={`text-xs text-center leading-tight
+            ${
+              !selectedGroup
+                ? "text-purple-600 font-semibold"
+                : "text-gray-600 dark:text-gray-400"
+            }`}
+                  >
+                    All Groups
+                  </span>
+
+                  {!selectedGroup && (
+                    <div className="h-[3px] w-5 bg-purple-600 rounded-full mt-1" />
+                  )}
+                </button>
+
+                {/* GROUPS */}
+                {inventoryGroups.map((group) => {
+                  const isSelected = selectedGroup === group.id;
+
+                  return (
+                    <button
+                      key={group.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedGroup(group.id);
+                        setShowGroupFilter(false);
+                      }}
+                      className="shrink-0 flex flex-col items-center min-w-[76px] transition-transform active:scale-[0.96]"
+                    >
+                      <div
+                        className={`w-14 h-14 rounded-full overflow-hidden mb-1
+                ${
+                  isSelected
+                    ? "bg-white shadow-sm"
+                    : "bg-gray-200 dark:bg-gray-800"
+                }`}
+                      >
+                        <img
+                          src={
+                            group.imageUrl || "/images/group-placeholder.png"
+                          }
+                          alt={group.name}
+                          onError={(e) => {
+                            e.currentTarget.src =
+                              "/images/group-placeholder.png";
+                          }}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+
+                      <span
+                        className={`text-xs text-center leading-tight max-w-[76px]
+                ${
+                  isSelected
+                    ? "text-purple-600 font-semibold"
+                    : "text-gray-600 dark:text-gray-400"
+                }`}
+                      >
+                        {group.name}
+                      </span>
+
+                      {isSelected && (
+                        <div className="h-[3px] w-5 bg-purple-600 rounded-full mt-1" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -669,13 +848,15 @@ useEffect(() => {
                 <span className="text-xs text-gray-500 dark:text-gray-400 font-medium shrink-0">
                   Filters:
                 </span>
-                
+
                 {/* SEARCH CHIP */}
                 {searchTerm && (
                   <div className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs shrink-0">
                     <Search className="w-3.5 h-3.5" />
-                    <span className="max-w-[120px] truncate">"{searchTerm}"</span>
-                    <button 
+                    <span className="max-w-[120px] truncate">
+                      "{searchTerm}"
+                    </span>
+                    <button
                       onClick={() => setSearchTerm("")}
                       className="ml-1 p-0.5 rounded-full hover:bg-blue-200 dark:hover:bg-blue-800/50"
                     >
@@ -689,9 +870,12 @@ useEffect(() => {
                   <div className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs shrink-0">
                     <Layers className="w-3.5 h-3.5" />
                     <span className="max-w-[120px] truncate">
-                      {inventoryGroups.find((g) => g.id === selectedGroup)?.name}
+                      {
+                        inventoryGroups.find((g) => g.id === selectedGroup)
+                          ?.name
+                      }
                     </span>
-                    <button 
+                    <button
                       onClick={() => setSelectedGroup(null)}
                       className="ml-1 p-0.5 rounded-full hover:bg-purple-200 dark:hover:bg-purple-800/50"
                     >
@@ -713,11 +897,11 @@ useEffect(() => {
                     <span>
                       {stockFilter === "low" ? "Low Stock" : "Out of Stock"}
                     </span>
-                    <button 
+                    <button
                       onClick={() => setStockFilter("all")}
                       className={`ml-1 p-0.5 rounded-full ${
-                        stockFilter === "low" 
-                          ? "hover:bg-orange-200 dark:hover:bg-orange-800/50" 
+                        stockFilter === "low"
+                          ? "hover:bg-orange-200 dark:hover:bg-orange-800/50"
                           : "hover:bg-red-200 dark:hover:bg-red-800/50"
                       }`}
                     >
@@ -727,7 +911,10 @@ useEffect(() => {
                 )}
 
                 {/* CLEAR ALL */}
-                {(searchTerm ? 1 : 0) + (selectedGroup ? 1 : 0) + (stockFilter !== "all" ? 1 : 0) > 1 && (
+                {(searchTerm ? 1 : 0) +
+                  (selectedGroup ? 1 : 0) +
+                  (stockFilter !== "all" ? 1 : 0) >
+                  1 && (
                   <button
                     onClick={() => {
                       setSearchTerm("");
@@ -745,41 +932,55 @@ useEffect(() => {
         </div>
 
         {/* Main Content */}
-        <div 
+        <div
           className="p-4 transition-[padding-top] duration-300 ease-in-out"
-          style={{ 
-            paddingTop: `${Math.max(headerHeight, safeAreaHeight > 0 ? safeAreaHeight + 64 : 72)}px`
+          style={{
+            paddingTop: `${Math.max(
+              headerHeight,
+              safeAreaHeight > 0 ? safeAreaHeight + 64 : 72
+            )}px`,
           }}
         >
-          {/* Stats Cards */}
+          {/* Stats Cards - Added Inventory Value */}
           <div className="grid grid-cols-2 gap-3 mb-4">
-            <div className="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800 shadow-sm">
+            <div className="bg-white dark:bg-neutral-950 rounded-xl p-4 border border-gray-200 dark:border-gray-800 shadow-sm">
               <div className="flex items-center gap-2 mb-2">
                 <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
                   <Package className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 </div>
-                <span className="text-xs text-gray-500 dark:text-gray-400">Total Fabrics</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  Total Fabrics
+                </span>
               </div>
               <div className="flex items-baseline gap-1">
-                <span className="text-xl font-bold text-gray-900 dark:text-white">{products.length}</span>
-                <span className="text-xs text-gray-500 dark:text-gray-400">items</span>
+                <span className="text-xl font-bold text-gray-900 dark:text-white">
+                  {products.length}
+                </span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  items
+                </span>
               </div>
             </div>
 
-            <div className="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800 shadow-sm">
+            <div className="bg-white dark:bg-neutral-950 rounded-xl p-4 border border-gray-200 dark:border-gray-800 shadow-sm">
               <div className="flex items-center gap-2 mb-2">
                 <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/30">
                   <Package className="w-4 h-4 text-green-600 dark:text-green-400" />
                 </div>
-                <span className="text-xs text-gray-500 dark:text-gray-400">In Stock</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  In Stock
+                </span>
               </div>
               <div className="flex items-baseline gap-1">
                 <span className="text-xl font-bold text-green-600 dark:text-green-400">
-                  {products.filter(p => p.stock > 10).length}
+                  {products.filter((p) => p.stock > 10).length}
                 </span>
-                <span className="text-xs text-gray-500 dark:text-gray-400">items</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  items
+                </span>
               </div>
             </div>
+
           </div>
 
           {/* Products List - Single Column without Images */}
@@ -789,14 +990,16 @@ useEffect(() => {
                 <Package className="w-10 h-10 text-gray-400 dark:text-gray-600" />
               </div>
               <p className="text-gray-600 dark:text-gray-300 font-medium text-base mb-2">
-                {searchTerm ? 'No fabrics found' : 'No fabrics in inventory'}
+                {searchTerm ? "No fabrics found" : "No fabrics in inventory"}
               </p>
               <p className="text-gray-500 dark:text-gray-500 text-sm mb-4">
-                {searchTerm ? 'Try a different search term' : 'Add fabrics to get started'}
+                {searchTerm
+                  ? "Try a different search term"
+                  : "Add fabrics to get started"}
               </p>
               {searchTerm && (
                 <button
-                  onClick={() => setSearchTerm('')}
+                  onClick={() => setSearchTerm("")}
                   className="px-5 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors"
                 >
                   Clear Search
@@ -805,86 +1008,138 @@ useEffect(() => {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-3">
-              {filteredProducts.map((product) => (
-                <div
-                  key={product.id}
-                  className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200 active:bg-gray-50 dark:active:bg-gray-800"
-                  onClick={() => handleViewHistory(product)}
-                >
-                  <div className="p-4">
-                    {/* Product Info Row */}
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="mb-1">
-                          <h3 className="font-semibold text-gray-900 dark:text-white text-base line-clamp-1">
-                            {product.productName}
-                          </h3>
-                          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                            Code: {product.productId}
-                          </p>
-                        </div>
-                        
-                        {/* Category and Stock Status */}
-                        <div className="flex items-center gap-2 mt-2">
-                          {product.category && (
-                            <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded-lg text-xs text-gray-600 dark:text-gray-400">
-                              <Layers className="w-3 h-3" />
-                              {product.category}
-                            </span>
-                          )}
-                          <span className={`px-2 py-1 rounded-lg text-xs font-medium ${getStockStatusColor(product.stock)}`}>
-                            {getStockStatusText(product.stock)}
-                          </span>
-                        </div>
-                      </div>
-                      
-                      {/* Stock Quantity */}
-                      <div className="text-right pl-2">
-                        <div className={`text-xl font-bold ${getStockColor(product.stock)}`}>
-                          {product.stock.toFixed(2)}
-                        </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                          {product.unit}
-                        </div>
-                      </div>
-                    </div>
+              {filteredProducts.map((product) => {
+                const productCost = productsCostMap[product.productId] || product.cost || 0;
+                const stockValue = productCost * product.stock;
+                
+                return (
+                  <div
+                    key={product.id}
+                    className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200 active:bg-gray-50 dark:active:bg-gray-800"
+                    onClick={() => handleViewHistory(product)}
+                  >
+                    <div className="p-4 p-4 dark:bg-neutral-950  dark:border-neutral-800">
+                      {/* Product Info Row */}
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="mb-1">
+                            <h3 className="font-semibold text-gray-900 dark:text-white text-base line-clamp-1">
+                              {product.productName}
+                            </h3>
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                              Code: {product.productId}
+                            </p>
+                          </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex gap-2 pt-3 border-t border-gray-100 dark:border-gray-800">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleQuickAdjust(product, 'add');
-                        }}
-                        className="flex-1 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-xs font-medium active:scale-95 transition-all duration-200 flex items-center justify-center gap-1.5"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        Add
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleQuickAdjust(product, 'reduce');
-                        }}
-                        className="flex-1 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-xs font-medium active:scale-95 transition-all duration-200 flex items-center justify-center gap-1.5"
-                      >
-                        <Minus className="w-3.5 h-3.5" />
-                        Remove
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleViewHistory(product);
-                        }}
-                        className="flex-1 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-xs font-medium active:scale-95 transition-all duration-200 flex items-center justify-center gap-1.5"
-                      >
-                        <History className="w-3.5 h-3.5" />
-                        History
-                      </button>
+                          {/* Category and Stock Status */}
+                          <div className="flex items-center gap-2 mt-2">
+                            {product.category && (
+                              <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded-lg text-xs text-gray-600 dark:text-gray-400">
+                                <Layers className="w-3 h-3" />
+                                {product.category}
+                              </span>
+                            )}
+                            <span
+                              className={`px-2 py-1 rounded-lg text-xs font-medium ${getStockStatusColor(
+                                product.stock
+                              )}`}
+                            >
+                              {getStockStatusText(product.stock)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Stock Quantity */}
+                        <div className="text-right pl-2">
+                          <div
+                            className={`text-xl font-bold ${getStockColor(
+                              product.stock
+                            )}`}
+                          >
+                            {product.stock.toFixed(2)}
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            {product.unit}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Cost and Stock Value Row - NEW */}
+                      <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                            <div className="p-1.5 rounded-md bg-blue-50 dark:bg-blue-900/20">
+                              <DollarSign className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">Cost</p>
+                              <p className="text-sm font-semibold text-blue-600 dark:text-blue-400">
+                                ₹
+                                {new Intl.NumberFormat("en-IN", {
+                                  maximumFractionDigits: 0,
+                                }).format(productCost > 0 ? productCost : 0)}{" "}
+                                per {product.unit}
+                              </p>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-2">
+                            <div className="p-1.5 rounded-md bg-purple-50 dark:bg-purple-900/20">
+                              <Calculator className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs text-gray-500 dark:text-gray-400">Stock Value</p>
+                              <p className={`text-sm font-semibold ${
+                                  stockValue < 0
+                                    ? "text-red-600 dark:text-red-400"
+                                    : "text-purple-600 dark:text-purple-400"
+                                }`}>
+                                ₹{new Intl.NumberFormat("en-IN", {
+                                  maximumFractionDigits: 0,
+                                }).format(stockValue)}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="flex gap-2 pt-3 border-t border-gray-100 dark:border-gray-800 mt-3">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleQuickAdjust(product, "add");
+                          }}
+                          className="flex-1 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-xs font-medium active:scale-95 transition-all duration-200 flex items-center justify-center gap-1.5"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          Add
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleQuickAdjust(product, "reduce");
+                          }}
+                          className="flex-1 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-xs font-medium active:scale-95 transition-all duration-200 flex items-center justify-center gap-1.5"
+                        >
+                          <Minus className="w-3.5 h-3.5" />
+                          Remove
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewHistory(product);
+                          }}
+                          className="flex-1 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-xs font-medium active:scale-95 transition-all duration-200 flex items-center justify-center gap-1.5"
+                        >
+                          <History className="w-3.5 h-3.5" />
+                          History
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -892,16 +1147,16 @@ useEffect(() => {
         {/* Adjust Stock Modal */}
         {showAdjustModal && selectedProduct && (
           <div className="fixed inset-0 z-50">
-            <div 
+            <div
               className="absolute inset-0 bg-black/70 dark:bg-black/70"
               onClick={() => {
                 setShowAdjustModal(false);
                 setSelectedProduct(null);
-                setAdjustQuantity('');
-                setAdjustNote('');
+                setAdjustQuantity("");
+                setAdjustNote("");
               }}
             />
-            <div className="absolute bottom-0 left-0 right-0 bg-white dark:bg-gray-900 rounded-t-3xl max-h-[85vh] overflow-hidden border-t border-gray-200 dark:border-gray-800">
+            <div className="absolute bottom-0 left-0 right-0 bg-white dark:bg-neutral-950 rounded-t-3xl max-h-[90vh] overflow-hidden border-t border-neutral-200 dark:border-neutral-800">
               <div className="flex justify-center pt-2">
                 <div className="w-12 h-1 bg-gray-300 dark:bg-gray-700 rounded-full"></div>
               </div>
@@ -913,8 +1168,8 @@ useEffect(() => {
                     onClick={() => {
                       setShowAdjustModal(false);
                       setSelectedProduct(null);
-                      setAdjustQuantity('');
-                      setAdjustNote('');
+                      setAdjustQuantity("");
+                      setAdjustNote("");
                     }}
                     className="p-2"
                   >
@@ -939,8 +1194,34 @@ useEffect(() => {
                         {selectedProduct.unit}
                       </p>
                     </div>
-                    <div className={`text-lg font-bold ${getStockColor(selectedProduct.stock)}`}>
+                    <div
+                      className={`text-lg font-bold ${getStockColor(
+                        selectedProduct.stock
+                      )}`}
+                    >
                       {getStockStatusText(selectedProduct.stock)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Cost Information - NEW */}
+                <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">
+                        Cost per unit
+                      </p>
+                      <p className="text-lg font-bold text-blue-600 dark:text-blue-400">
+                        ₹{(productsCostMap[selectedProduct.productId] || selectedProduct.cost || 0).toFixed(2)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">
+                        Current Value
+                      </p>
+                      <p className="text-lg font-bold text-purple-600 dark:text-purple-400">
+                        ₹{((productsCostMap[selectedProduct.productId] || selectedProduct.cost || 0) * selectedProduct.stock).toFixed(2)}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -990,6 +1271,15 @@ useEffect(() => {
                       {selectedProduct.unit}
                     </div>
                   </div>
+                  {/* Value Impact - NEW */}
+                  {adjustQuantity && !isNaN(parseFloat(adjustQuantity)) && (
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                      Value impact: ₹
+                      {((productsCostMap[selectedProduct.productId] || selectedProduct.cost || 0) * 
+                        parseFloat(adjustQuantity) * 
+                        (adjustType === "add" ? 1 : -1)).toFixed(2)}
+                    </p>
+                  )}
                 </div>
 
                 {/* Note */}
@@ -1035,7 +1325,7 @@ useEffect(() => {
         {/* History Modal */}
         {showHistoryModal && selectedProduct && (
           <div className="fixed inset-0 z-50">
-            <div 
+            <div
               className="absolute inset-0 bg-black/70 dark:bg-black/70"
               onClick={() => {
                 setShowHistoryModal(false);
@@ -1043,7 +1333,7 @@ useEffect(() => {
                 setProductTransactions([]);
               }}
             />
-            <div className="absolute bottom-0 left-0 right-0 bg-white dark:bg-gray-900 rounded-t-3xl max-h-[85vh] overflow-hidden border-t border-gray-200 dark:border-gray-800">
+            <div className="absolute bottom-0 left-0 right-0 bg-white dark:bg-neutral-950 rounded-t-3xl max-h-[90vh] overflow-hidden border-t border-neutral-200 dark:border-neutral-800">
               <div className="flex justify-center pt-2">
                 <div className="w-12 h-1 bg-gray-300 dark:bg-gray-700 rounded-full"></div>
               </div>
@@ -1089,7 +1379,7 @@ useEffect(() => {
                     {productTransactions.map((transaction) => (
                       <div
                         key={transaction.id}
-                        className="p-3 bg-gray-50 dark:bg-gray-800 rounded-xl"
+                        className="p-3 bg-gray-50 dark:bg-neutral-900 rounded-xl"
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex items-center gap-3">
@@ -1115,7 +1405,9 @@ useEffect(() => {
                                 }`}
                               >
                                 {transaction.quantityChange > 0 ? "+" : ""}
-                                {Number(transaction.quantityChange).toFixed(2)}{" "}
+                                {Number(transaction.quantityChange).toFixed(
+                                  2
+                                )}{" "}
                                 {transaction.unit}
                               </span>
                               <p className="text-xs text-gray-500 dark:text-gray-400 capitalize mt-1">
@@ -1125,10 +1417,14 @@ useEffect(() => {
                           </div>
                           <div className="text-right">
                             <p className="text-sm">
-                              {new Date(transaction.createdAt).toLocaleDateString()}
+                              {new Date(
+                                transaction.createdAt
+                              ).toLocaleDateString()}
                             </p>
                             <p className="text-xs text-gray-500 dark:text-gray-400">
-                              {new Date(transaction.createdAt).toLocaleTimeString([], {
+                              {new Date(
+                                transaction.createdAt
+                              ).toLocaleTimeString([], {
                                 hour: "2-digit",
                                 minute: "2-digit",
                               })}
@@ -1137,7 +1433,7 @@ useEffect(() => {
                         </div>
 
                         {transaction.note && (
-                          <p className="text-sm text-gray-700 dark:text-gray-300 mb-3 p-2 bg-white/50 dark:bg-gray-900/50 rounded-lg">
+                          <p className="text-sm text-gray-700 dark:text-gray-300 mb-3 p-2 bg-white/50 dark:bg-neutral-900/50 rounded-lg">
                             {transaction.note}
                           </p>
                         )}
@@ -1150,7 +1446,9 @@ useEffect(() => {
                           <div className="flex items-center gap-1">
                             <Clock className="w-3 h-3" />
                             <span>
-                              {new Date(transaction.createdAt).toLocaleTimeString([], {
+                              {new Date(
+                                transaction.createdAt
+                              ).toLocaleTimeString([], {
                                 hour: "2-digit",
                                 minute: "2-digit",
                               })}

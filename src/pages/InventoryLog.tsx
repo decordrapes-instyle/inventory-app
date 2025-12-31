@@ -1,5 +1,6 @@
+import { loadFirebase } from '../config/firebaseLoader';
 import React, { useState, useEffect } from 'react';
-import { ref, onValue, get } from 'firebase/database';
+const { ref, onValue, get } = await loadFirebase();
 import { database } from '../config/firebase';
 import { 
   Search, Package, History, 

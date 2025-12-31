@@ -1,6 +1,26 @@
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getDatabase } from "firebase/database";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signOut,
+  onAuthStateChanged,
+  type User,
+} from "firebase/auth";
+import {
+  getDatabase,
+  ref,
+  set,
+  get,
+  child,
+  push,
+  update,
+  onValue,
+  off,
+  type Database,
+} from "firebase/database";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAD4piXNNzWi3z1riCEl07NHnjg2IHcFhc",
@@ -15,5 +35,32 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const database = getDatabase(app);
+const auth = getAuth(app);
+const database = getDatabase(app);
+
+try {
+  console.info("Connected to Database");
+} catch (error) {
+  console.warn("Could not configure persistence");
+}
+
+export {
+  auth,
+  database,
+  ref,
+  set,
+  get,
+  child,
+  push,
+  update,
+  onValue,
+  off,
+  GoogleAuthProvider,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signOut,
+  onAuthStateChanged,
+};
+
+export type { User, Database };

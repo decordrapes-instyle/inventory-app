@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { ref, onValue, get } from 'firebase/database';
+import { loadFirebase } from '../config/firebaseLoader';
+const { ref, onValue, get } = await loadFirebase();
 import { database } from '../config/firebase';
 import { 
   ArrowLeft, History, Package, TrendingUp, TrendingDown,
   Users, Calendar, Clock, X} from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigation } from '../context/NavigationContext';
 import toast from 'react-hot-toast';
 
 import {
@@ -41,7 +42,7 @@ function CountUp({ value }: { value: number }) {
   }, [value]);
 
   return (
-    <span className="text-2xl font-bold text-gray-900 dark:text-white">{count}</span>
+    <span className="text-2xl font-bold text-neutral-900 dark:text-white">{count}</span>
   );
 }
 interface Transaction {
@@ -71,7 +72,7 @@ interface UserProfile {
 
 const NotificationsPage: React.FC = () => {
   const { user } = useAuth();
-  const navigate = useNavigate();
+  const { goBack } = useNavigation();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -360,7 +361,7 @@ const NotificationsPage: React.FC = () => {
 
   // Render transaction card
   const renderTransactionCard = (transaction: Transaction) => (
-    <div key={transaction.id} className="mb-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
+    <div key={transaction.id} className="mb-3 bg-white dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-800 overflow-hidden shadow-sm">
       <div className="p-4">
         <div className="flex items-start justify-between mb-3">
           <div className="flex flex-col gap-3 w-full">
@@ -369,38 +370,38 @@ const NotificationsPage: React.FC = () => {
     <div
       className={`p-2 rounded-lg ${
         transaction.quantityChange > 0
-          ? "bg-green-50 dark:bg-green-900/20"
-          : "bg-red-50 dark:bg-red-900/20"
+          ? "bg-emerald-50 dark:bg-emerald-900/20"
+          : "bg-rose-50 dark:bg-rose-900/20"
       }`}
     >
       {transaction.quantityChange > 0 ? (
-        <TrendingUp className="w-5 h-5 text-green-600 dark:text-green-400" />
+        <TrendingUp className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
       ) : (
-        <TrendingDown className="w-5 h-5 text-red-600 dark:text-red-400" />
+        <TrendingDown className="w-5 h-5 text-rose-600 dark:text-rose-400" />
       )}
     </div>
 
     <div className="flex-1">
       <div className="flex justify-between items-start">
         <div>
-          <span className="font-bold text-lg text-gray-900 dark:text-white block">
+          <span className="font-bold text-lg text-neutral-900 dark:text-white block">
             {`${transaction.quantityChange > 0 ? "+" : ""}${Number(
               transaction.quantityChange
             ).toFixed(2)} ${transaction.unit}`}
           </span>
-          <p className="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-1 mt-1">
+          <p className="text-sm text-neutral-600 dark:text-neutral-400 flex items-center gap-1 mt-1">
             <Package size={14} /> {transaction.productName}
           </p>
         </div>
 
         <div className="text-right">
-          <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
             {new Date(transaction.createdAt).toLocaleDateString("en-US", {
               month: "short",
               day: "numeric",
             })}
           </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {new Date(transaction.createdAt).toLocaleTimeString("en-US", {
               hour: "2-digit",
               minute: "2-digit",
@@ -414,27 +415,27 @@ const NotificationsPage: React.FC = () => {
 
   {/* USER INFO – FULL WIDTH ROW */}
   {userRole === "admin" && transaction.performedByName && (
-    <div className="flex items-center gap-2 w-full mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+    <div className="flex items-center gap-2 w-full mt-3 pt-3 border-t border-neutral-100 dark:border-neutral-800">
       {transaction.performedByImage ? (
         <img
           src={transaction.performedByImage}
           alt={transaction.performedByName}
-          className="w-6 h-6 rounded-full object-cover border border-gray-200 dark:border-gray-600"
+          className="w-6 h-6 rounded-full object-cover border border-neutral-200 dark:border-neutral-700"
         />
       ) : (
-        <div className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-800 flex items-center justify-center">
-          <span className="text-xs font-medium text-blue-600 dark:text-blue-300">
+        <div className="w-6 h-6 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
+          <span className="text-xs font-medium text-neutral-600 dark:text-neutral-300">
             {transaction.performedByName.charAt(0).toUpperCase()}
           </span>
         </div>
       )}
 
-      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+      <p className="text-sm font-medium text-neutral-900 dark:text-white truncate">
         {transaction.performedByName}
       </p>
 
       {transaction.performedByRole && (
-        <span className="ml-auto text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded">
+        <span className="ml-auto text-xs px-2 py-0.5 bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 rounded">
           {transaction.performedByRole}
         </span>
       )}
@@ -445,13 +446,13 @@ const NotificationsPage: React.FC = () => {
         </div>
         
         {transaction.note && (
-          <div className="mt-2 p-3 bg-gray-50 dark:bg-gray-900/30 rounded-lg">
-            <p className="text-sm text-gray-700 dark:text-gray-300">"{transaction.note}"</p>
+          <div className="mt-2 p-3 bg-neutral-50 dark:bg-neutral-800/30 rounded-lg">
+            <p className="text-sm text-neutral-700 dark:text-neutral-300">"{transaction.note}"</p>
           </div>
         )}
         
-        <div className="mt-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-          <span className="capitalize px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded">
+        <div className="mt-2 flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">
+          <span className="capitalize px-2 py-1 bg-neutral-100 dark:bg-neutral-800 rounded">
             {transaction.source}
           </span>
           <span>
@@ -464,53 +465,52 @@ const NotificationsPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-black flex items-center justify-center">
+      <div className="min-h-screen bg-neutral-50 dark:bg-black flex items-center justify-center">
         <div className="text-center">
-          <div className="w-12 h-12 border-4 border-gray-200 dark:border-gray-800 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-500 dark:text-gray-400">Loading Activities...</p>
+          <div className="w-12 h-12 border-4 border-neutral-200 dark:border-neutral-900 border-t-neutral-500 dark:border-t-neutral-400 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-neutral-500 dark:text-neutral-400">Loading Activities...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-black pb-20">
+    <div className="min-h-screen bg-neutral-50 dark:bg-black pb-20">
       {/* Header */}
-      <div className="pt-safe sticky top-0 z-20 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
+      <div className="pt-safe sticky top-0 z-20 bg-white dark:bg-black border-b border-neutral-200 dark:border-neutral-900">
         <div className="px-4 py-3">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
               <button
-                onClick={() => navigate(-1)}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
+                onClick={goBack}
+                className="p-2 hover:bg-neutral-100 dark:hover:bg-neutral-900 rounded-lg"
               >
-                <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                <ArrowLeft className="w-5 h-5 text-neutral-600 dark:text-neutral-300" />
               </button>
               <div>
-                <h1 className="text-lg font-bold text-gray-900 dark:text-white">
+                <h1 className="text-lg font-bold text-neutral-900 dark:text-white">
                   {userRole === 'admin' ? 'Team Activities' : 'My Activities'}
                 </h1>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
                   {userRole === 'admin' ? 'Monitor all team members' : 'Track your production work'}
                 </p>
               </div>
             </div>
             {userRole === 'admin' && (
-              <div className="flex items-center gap-1 px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded-full">
+              <div className="flex items-center gap-1 px-3 py-1 bg-neutral-100 dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 rounded-full">
                 <Users className="w-4 h-4" />
                 <span className="text-sm font-medium">Admin</span>
               </div>
             )}
           </div>
 
-          {/* Time Period Filters - Responsive */}
-          <div className="flex gap-2 mb-3 overflow-x-auto pb-2">
+          <div className="flex gap-2 mb-3 overflow-x-auto pb-2 no-scrollbar">
             <button
               onClick={() => {
                 setSelectedFilter('today');
                 setSelectedDate(undefined);
               }}
-              className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 ${selectedFilter === 'today' ? 'bg-blue-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700'}`}
+              className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 ${selectedFilter === 'today' ? 'bg-neutral-800 text-white dark:bg-neutral-700 dark:text-white' : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 border border-neutral-300 dark:border-neutral-800'}`}
             >
               <Calendar className="w-4 h-4" />
               <span className="hidden xs:inline">Today</span>
@@ -522,7 +522,7 @@ const NotificationsPage: React.FC = () => {
                 setSelectedFilter('yesterday');
                 setSelectedDate(undefined);
               }}
-              className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 ${selectedFilter === 'yesterday' ? 'bg-blue-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700'}`}
+              className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 ${selectedFilter === 'yesterday' ? 'bg-neutral-800 text-white dark:bg-neutral-700 dark:text-white' : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 border border-neutral-300 dark:border-neutral-800'}`}
             >
               <Clock className="w-4 h-4" />
               <span className="hidden xs:inline">Yesterday</span>
@@ -534,7 +534,7 @@ const NotificationsPage: React.FC = () => {
                 setSelectedFilter('last7');
                 setSelectedDate(undefined);
               }}
-              className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 ${selectedFilter === 'last7' ? 'bg-blue-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700'}`}
+              className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 ${selectedFilter === 'last7' ? 'bg-neutral-800 text-white dark:bg-neutral-700 dark:text-white' : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 border border-neutral-300 dark:border-neutral-800'}`}
             >
               <Calendar className="w-4 h-4" />
               <span className="hidden sm:inline">7 Days</span>
@@ -547,7 +547,7 @@ const NotificationsPage: React.FC = () => {
                 setSelectedFilter('all');
                 setSelectedDate(undefined);
               }}
-              className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 ${selectedFilter === 'all' ? 'bg-blue-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700'}`}
+              className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 ${selectedFilter === 'all' ? 'bg-neutral-800 text-white dark:bg-neutral-700 dark:text-white' : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 border border-neutral-300 dark:border-neutral-800'}`}
             >
               <History className="w-4 h-4" />
               <span className="hidden xs:inline">All</span>
@@ -558,7 +558,7 @@ const NotificationsPage: React.FC = () => {
             <Popover open={showDatePicker} onOpenChange={setShowDatePicker}>
               <PopoverTrigger asChild>
                 <button
-                  className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 ${selectedFilter === 'specific' ? 'bg-blue-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700'}`}
+                  className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 ${selectedFilter === 'specific' ? 'bg-neutral-800 text-white dark:bg-neutral-700 dark:text-white' : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 border border-neutral-300 dark:border-neutral-800'}`}
                 >
                   <Calendar className="w-4 h-4" />
                   <span className="hidden xs:inline">
@@ -586,9 +586,9 @@ const NotificationsPage: React.FC = () => {
                   className="rounded-lg border shadow-lg"
                 />
                 {selectedDate && (
-                  <div className="p-3 border-t border-gray-200 dark:border-gray-700">
+                  <div className="p-3 border-t border-neutral-200 dark:border-neutral-800">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600 dark:text-gray-300">
+                      <span className="text-sm text-neutral-600 dark:text-neutral-300">
                         Selected: {formatDate(selectedDate)}
                       </span>
                       <button
@@ -597,7 +597,7 @@ const NotificationsPage: React.FC = () => {
                           setSelectedFilter('today');
                           setShowDatePicker(false);
                         }}
-                        className="text-sm text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300"
+                        className="text-sm text-rose-500 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-300"
                       >
                         Clear
                       </button>
@@ -610,10 +610,10 @@ const NotificationsPage: React.FC = () => {
 
           {/* Selected Date Display */}
           {selectedFilter === 'specific' && selectedDate && (
-            <div className="mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex items-center justify-between">
+            <div className="mb-3 p-2 bg-neutral-100 dark:bg-neutral-900/50 rounded-lg flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-blue-500 dark:text-blue-400" />
-                <span className="text-sm text-blue-700 dark:text-blue-300">
+                <Calendar className="w-4 h-4 text-neutral-600 dark:text-neutral-400" />
+                <span className="text-sm text-neutral-700 dark:text-neutral-300">
                   {formatDate(selectedDate)}
                 </span>
               </div>
@@ -622,9 +622,9 @@ const NotificationsPage: React.FC = () => {
                   setSelectedDate(undefined);
                   setSelectedFilter('today');
                 }}
-                className="p-1 hover:bg-blue-100 dark:hover:bg-blue-800/30 rounded"
+                className="p-1 hover:bg-neutral-200 dark:hover:bg-neutral-800 rounded"
               >
-                <X className="w-4 h-4 text-blue-500 dark:text-blue-400" />
+                <X className="w-4 h-4 text-neutral-500 dark:text-neutral-400" />
               </button>
             </div>
           )}
@@ -632,15 +632,15 @@ const NotificationsPage: React.FC = () => {
 
         {/* Team Members Filter - Admin Only */}
         {userRole === 'admin' && allUsers.length > 0 && (
-          <div className="border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 py-3">
+          <div className="border-t border-neutral-200 dark:border-neutral-900 bg-white dark:bg-black px-4 py-3">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                <Users className="w-4 h-4 text-neutral-500 dark:text-neutral-400" />
+                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
                   Filter by Team Member
                 </span>
               </div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">
+              <div className="text-xs text-neutral-500 dark:text-neutral-400">
                 {selectedUser === 'all' ? 'All Members' : 'Filtered'}
               </div>
             </div>
@@ -649,12 +649,12 @@ const NotificationsPage: React.FC = () => {
               <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                 <button
                   onClick={() => setSelectedUser('all')}
-                  className={`flex-shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg border ${selectedUser === 'all' ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700' : 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}
+                  className={`flex-shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg border ${selectedUser === 'all' ? 'bg-neutral-100 dark:bg-neutral-900/50 border-neutral-300 dark:border-neutral-800' : 'bg-neutral-50 dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800'}`}
                 >
-                  <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
-                    <Users className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                  <div className="w-8 h-8 rounded-full bg-neutral-200 dark:bg-neutral-800 flex items-center justify-center">
+                    <Users className="w-4 h-4 text-neutral-500 dark:text-neutral-400" />
                   </div>
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300 whitespace-nowrap">
                     All Team
                   </span>
                 </button>
@@ -663,36 +663,36 @@ const NotificationsPage: React.FC = () => {
                   <button
                     key={teamUser.uid}
                     onClick={() => setSelectedUser(selectedUser === teamUser.uid ? 'all' : teamUser.uid)}
-                    className={`flex-shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg border ${selectedUser === teamUser.uid ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700' : 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}
+                    className={`flex-shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg border ${selectedUser === teamUser.uid ? 'bg-neutral-100 dark:bg-neutral-900/50 border-neutral-300 dark:border-neutral-800' : 'bg-neutral-50 dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800'}`}
                   >
                     {teamUser.profileImage ? (
                       <img 
                         src={teamUser.profileImage} 
                         alt={teamUser.displayName}
-                        className="w-8 h-8 rounded-full object-cover border border-white dark:border-gray-800"
+                        className="w-8 h-8 rounded-full object-cover border border-white dark:border-neutral-900"
                         onError={(e) => {
                           (e.target as HTMLImageElement).style.display = 'none';
                           const parent = (e.target as HTMLImageElement).parentElement;
                           if (parent) {
                             const fallback = document.createElement('div');
-                            fallback.className = 'w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center';
-                            fallback.innerHTML = `<span class="text-sm font-semibold text-gray-600 dark:text-gray-300">${teamUser.displayName.charAt(0).toUpperCase()}</span>`;
+                            fallback.className = 'w-8 h-8 rounded-full bg-neutral-200 dark:bg-neutral-800 flex items-center justify-center';
+                            fallback.innerHTML = `<span class="text-sm font-semibold text-neutral-600 dark:text-neutral-300">${teamUser.displayName.charAt(0).toUpperCase()}</span>`;
                             parent.appendChild(fallback);
                           }
                         }}
                       />
                     ) : (
-                      <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
-                        <span className="text-sm font-semibold text-gray-600 dark:text-gray-300">
+                      <div className="w-8 h-8 rounded-full bg-neutral-200 dark:bg-neutral-800 flex items-center justify-center">
+                        <span className="text-sm font-semibold text-neutral-600 dark:text-neutral-300">
                           {teamUser.displayName.charAt(0).toUpperCase()}
                         </span>
                       </div>
                     )}
                     <div className="text-left">
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300 block truncate max-w-[80px]">
+                      <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300 block truncate max-w-[80px]">
                         {teamUser.displayName.split(' ')[0]}
                       </span>
-                      <span className="text-xs text-gray-500 dark:text-gray-400 capitalize">
+                      <span className="text-xs text-neutral-500 dark:text-neutral-400 capitalize">
                         {teamUser.role}
                       </span>
                     </div>
@@ -703,15 +703,15 @@ const NotificationsPage: React.FC = () => {
             
             {selectedUser !== 'all' && (
               <div className="mt-2 flex items-center justify-between text-sm">
-                <span className="text-gray-600 dark:text-gray-400">
+                <span className="text-neutral-600 dark:text-neutral-400">
                   Filtered: 
-                  <span className="font-semibold text-gray-900 dark:text-white ml-1">
+                  <span className="font-semibold text-neutral-900 dark:text-white ml-1">
                     {allUsers.find(u => u.uid === selectedUser)?.displayName}
                   </span>
                 </span>
                 <button
                   onClick={() => setSelectedUser('all')}
-                  className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+                  className="text-xs text-neutral-600 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300"
                 >
                   Clear
                 </button>
@@ -724,17 +724,17 @@ const NotificationsPage: React.FC = () => {
       {/* Transactions List */}
       <div className="p-4">
         {/* Summary */}
-        <div className="mb-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+        <div className="mb-4 bg-white dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-800 p-3">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-gray-900 dark:text-white tracking-wide">
+              <h2 className="text-sm font-semibold text-neutral-900 dark:text-white tracking-wide">
                 {selectedFilter === 'today' && "Today's Work"}
                 {selectedFilter === 'yesterday' && "Yesterday's Work"}
                 {selectedFilter === 'last7' && "Last 7 Days Work"}
                 {selectedFilter === 'all' && "All Activities"}
                 {selectedFilter === 'specific' && selectedDate && "Selected Date"}
               </h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
                 {selectedFilter === 'specific' && selectedDate 
                   ? formatDate(selectedDate)
                   : userRole === 'admin' && selectedUser !== 'all' 
@@ -746,10 +746,10 @@ const NotificationsPage: React.FC = () => {
               </p>
             </div>
             <div className="text-right">
-              <span className="text-2xl font-bold text-gray-900 dark:text-white">
+              <span className="text-2xl font-bold text-neutral-900 dark:text-white">
                 <CountUp value={filteredTransactions.length} />
               </span>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Activities</p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">Activities</p>
             </div>
           </div>
         </div>
@@ -757,13 +757,13 @@ const NotificationsPage: React.FC = () => {
         {/* Transactions */}
         {filteredTransactions.length === 0 ? (
           <div className="text-center py-12">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-              <History className="w-8 h-8 text-gray-400 dark:text-gray-600" />
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-neutral-100 dark:bg-neutral-900 flex items-center justify-center">
+              <History className="w-8 h-8 text-neutral-400 dark:text-neutral-600" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">
+            <h3 className="text-lg font-semibold text-neutral-700 dark:text-neutral-300 mb-2">
               No Activities Found
             </h3>
-            <p className="text-gray-500 dark:text-gray-400 mb-4">
+            <p className="text-neutral-500 dark:text-neutral-400 mb-4">
               {selectedFilter === 'today' 
                 ? "No activities recorded for today"
                 : selectedFilter === 'yesterday'
@@ -782,7 +782,7 @@ const NotificationsPage: React.FC = () => {
                   setSelectedUser('all');
                   setSelectedDate(undefined);
                 }}
-                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm"
+                className="px-4 py-2 bg-neutral-800 text-white dark:bg-neutral-700 dark:text-white rounded-lg hover:bg-neutral-700 dark:hover:bg-neutral-600 transition-colors text-sm"
               >
                 Show All Activities
               </button>

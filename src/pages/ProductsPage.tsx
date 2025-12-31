@@ -1,112 +1,18 @@
-// src/pages/ProductsPage.tsx
-import React, { useState, useEffect } from 'react';
-import { ref, onValue, get } from 'firebase/database';
-import { database } from '../config/firebase';
+import React from 'react';
+import { useProducts } from '../hooks/useProducts';
 import { ArrowLeft, History, Package, TrendingUp, TrendingDown } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import toast from 'react-hot-toast';
-
-interface Product {
-  id: string;
-  productId: string;
-  productName: string;
-  stock: number;
-  unit: string;
-  lastupdatedAt: number;
-}
-
-interface Transaction {
-  id: string;
-  productId: string;
-  productName: string;
-  quantityChange: number;
-  unit: string;
-  source: 'quotation' | 'manual' | 'purchase';
-  quotationId?: string;
-  purchaseId?: string;
-  note?: string;
-  createdAt: number;
-  cls?: string;
-}
+import { useNavigation } from '../context/NavigationContext';
 
 const ProductsPage: React.FC = () => {
-  const navigate = useNavigate();
-  const [products, setProducts] = useState<Product[]>([]);
-  const [transactions, setTransactions] = useState<{[key: string]: Transaction[]}>({});
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const productsRef = ref(database, 'quotations/manualInventory');
-    setLoading(true);
-
-    const fetchProducts = async () => {
-      try {
-        const snapshot = await get(productsRef);
-        if (snapshot.exists()) {
-          const data = snapshot.val();
-          const productsList: Product[] = Object.entries(data).map(([key, value]: any) => ({
-            id: key,
-            productId: value.productId || key,
-            productName: value.productName || 'Unknown Product',
-            stock: value.stock || 0,
-            unit: value.unit || 'piece',
-            lastupdatedAt: value.updatedAt || value.createdAt || Date.now(),
-          }));
-          setProducts(productsList);
-          fetchTransactionsForAllProducts(productsList);
-        } else {
-          setProducts([]);
-          setLoading(false);
-        }
-      } catch (err: any) {
-        console.error('Error loading products:', err);
-        toast.error('Failed to load products');
-        setLoading(false);
-      }
-    };
-
-    const fetchTransactionsForAllProducts = async (products: Product[]) => {
-        const transactionsData: {[key: string]: Transaction[]} = {};
-        for (const product of products) {
-            try {
-                const transactionsRef = ref(database, `quotations/inventoryTransactions/${product.id}`);
-                const snapshot = await get(transactionsRef);
-                if (snapshot.exists()) {
-                    const data = snapshot.val();
-                    const transactionsList = Object.entries(data)
-                        .map(([key, value]: any) => ({
-                        id: key,
-                        ...value,
-                        }))
-                        .sort((a: Transaction, b: Transaction) => b.createdAt - a.createdAt);
-                    transactionsData[product.id] = transactionsList;
-                } else {
-                    transactionsData[product.id] = [];
-                }
-            } catch (err: any) {
-                console.error(`Error loading transactions for product ${product.id}:`, err);
-                toast.error(`Failed to load transaction history for ${product.productName}`);
-            }
-        }
-        setTransactions(transactionsData);
-        setLoading(false);
-    }
-
-    fetchProducts();
-    
-    const unsubscribe = onValue(productsRef, (_snapshot) => {
-      fetchProducts();
-    });
-
-    return () => unsubscribe();
-  }, []);
+  const { goBack } = useNavigation();
+  const { products, transactions, loading } = useProducts();
 
   return (
     <div className="min-h-screen bg-white dark:bg-black">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-white dark:bg-black border-b border-gray-200 dark:border-gray-900 px-4 py-3 flex items-center gap-3">
         <button
-          onClick={() => navigate(-1)}
+          onClick={goBack}
           className="p-2 text-gray-500 dark:text-gray-400"
         >
           <ArrowLeft className="w-5 h-5" />
