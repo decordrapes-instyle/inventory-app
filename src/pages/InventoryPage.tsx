@@ -97,6 +97,14 @@ const InventoryPage: React.FC = () => {
   const lastScrollY = useRef(0);
   const [chunkLoading, setChunkLoading] = useState(false);
 
+  // Swipe gesture refs
+  const adjustModalRef = useRef<HTMLDivElement>(null);
+  const historyModalRef = useRef<HTMLDivElement>(null);
+  const [isSwiping, setIsSwiping] = useState(false);
+  const [startY, setStartY] = useState(0);
+  const [currentY, setCurrentY] = useState(0);
+  const swipeThreshold = 100;
+
   const {
     inventoryGroups,
     loading: dataLoading,
@@ -143,6 +151,74 @@ const InventoryPage: React.FC = () => {
   };
 
   const safeAreaHeight = useSafeAreaHeight();
+
+  // Swipe gesture handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    setStartY(touch.clientY);
+    setCurrentY(touch.clientY);
+    setIsSwiping(true);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isSwiping) return;
+
+    const touch = e.touches[0];
+    const deltaY = touch.clientY - startY;
+
+    // Only allow downward swipe
+    if (deltaY > 0) {
+      setCurrentY(touch.clientY);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (!isSwiping) return;
+
+    const deltaY = currentY - startY;
+
+    // If swipe distance exceeds threshold, close the modal
+    if (deltaY > swipeThreshold) {
+      if (showAdjustModal) {
+        setShowAdjustModal(false);
+        setSelectedProduct(null);
+        setAdjustQuantity("");
+        setAdjustNote("");
+      } else if (showHistoryModal) {
+        setShowHistoryModal(false);
+        setSelectedProduct(null);
+        setProductTransactions([]);
+      }
+    }
+
+    setIsSwiping(false);
+    setStartY(0);
+    setCurrentY(0);
+  };
+
+  // Handle ESC key press
+  useEffect(() => {
+    const handleEscKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (showHistoryModal) {
+          setShowHistoryModal(false);
+          setSelectedProduct(null);
+          setProductTransactions([]);
+        } else if (showAdjustModal) {
+          setShowAdjustModal(false);
+          setSelectedProduct(null);
+          setAdjustQuantity("");
+          setAdjustNote("");
+        } else if (showImageModal) {
+          setShowImageModal(false);
+          setSelectedProduct(null);
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleEscKey);
+    return () => document.removeEventListener("keydown", handleEscKey);
+  }, [showHistoryModal, showAdjustModal, showImageModal]);
 
   useEffect(() => {
     let mounted = true;
@@ -224,6 +300,7 @@ const InventoryPage: React.FC = () => {
     return () => window.removeEventListener("scroll", handleScroll);
   }, [showGroupFilter, showStockFilter, showSearchInput]);
 
+  // Handle back button/gesture on mobile
   useEffect(() => {
     const handlePopState = () => {
       if (showHistoryModal) {
@@ -331,7 +408,6 @@ const InventoryPage: React.FC = () => {
         ? `${adjustNote} (${userInfo})`
         : `${quantityChange > 0 ? "Added" : "Removed"} by ${userNameInfo}`;
 
-      // Use the hook's adjustStock function
       await adjustStock(
         selectedProduct.id,
         selectedProduct.productName,
@@ -358,7 +434,6 @@ const InventoryPage: React.FC = () => {
     setUiLoading(true);
 
     try {
-      // Use the hook's getProductHistory function
       const transactionsList = await getProductHistory(product.id);
       setProductTransactions(transactionsList);
       setShowHistoryModal(true);
@@ -393,20 +468,14 @@ const InventoryPage: React.FC = () => {
   const getFilteredProducts = () => {
     let filtered: Product[] = [];
 
-    // If searching, use the search function that searches ALL products
     if (searchTerm) {
       filtered = searchProducts(searchTerm);
-    }
-    // If no search but has group filter
-    else if (selectedGroup) {
+    } else if (selectedGroup) {
       filtered = getGroupProducts(selectedGroup);
-    }
-    // If no search and no group filter, use displayProducts for chunked loading
-    else {
+    } else {
       filtered = displayProducts;
     }
 
-    // Apply stock filter to the filtered results
     if (stockFilter === "low") {
       filtered = filtered.filter((p) => p.stock > 0 && p.stock <= 10);
     } else if (stockFilter === "out") {
@@ -421,7 +490,6 @@ const InventoryPage: React.FC = () => {
   const handleLoadMore = () => {
     setChunkLoading(true);
     loadMore();
-    // Reset chunk loading after a short delay
     setTimeout(() => {
       setChunkLoading(false);
     }, 300);
@@ -509,7 +577,6 @@ const InventoryPage: React.FC = () => {
     );
   }
 
-  // Only show skeleton on initial app load
   if (
     dataLoading &&
     displayProducts.length === 0 &&
@@ -968,7 +1035,7 @@ const InventoryPage: React.FC = () => {
 
                           {/* STOCK */}
                           <div className="flex items-center justify-between mb-4">
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                            <span className="text-xs text-black/60 dark:text-white/60">
                               Stock
                             </span>
                             <span
@@ -1002,7 +1069,7 @@ flex items-center justify-center gap-1.5
 "
                           >
                             <Edit className="w-3.5 h-3.5" />
-                            Adjust
+                            Adjust Stock
                           </button>
                         </div>
                       </div>
@@ -1020,7 +1087,20 @@ flex items-center justify-center gap-1.5
                     <button
                       onClick={handleLoadMore}
                       disabled={chunkLoading}
-                      className="px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      className="px-6 py-3
+  rounded-full
+  bg-neutral-900 text-white font-medium
+  flex items-center gap-2
+
+  active:scale-95
+  transition-transform duration-150 ease-out
+
+  focus:outline-none
+  focus:ring-2 focus:ring-neutral-400 focus:ring-offset-2
+
+  disabled:opacity-50
+  disabled:cursor-not-allowed
+  disabled:active:scale-100"
                     >
                       {chunkLoading ? (
                         <>
@@ -1030,7 +1110,7 @@ flex items-center justify-center gap-1.5
                       ) : (
                         <>
                           <ChevronDown className="w-4 h-4" />
-                          Load More Products
+                          Load More
                         </>
                       )}
                     </button>
@@ -1071,9 +1151,9 @@ flex items-center justify-center gap-1.5
         )}
 
         {showAdjustModal && selectedProduct && (
-          <div className="fixed inset-0 z-50">
+          <div className="fixed inset-0 z-50" ref={adjustModalRef}>
             <div
-              className="absolute inset-0 bg-black/70 dark:bg-black/70"
+              className="absolute inset-0 bg-black/60"
               onClick={() => {
                 setShowAdjustModal(false);
                 setSelectedProduct(null);
@@ -1082,9 +1162,55 @@ flex items-center justify-center gap-1.5
               }}
             />
 
-            <div className="absolute bottom-0 left-0 right-0 bg-white dark:bg-neutral-950 rounded-t-3xl max-h-[90vh] overflow-hidden border-t border-neutral-200 dark:border-neutral-800">
-              <div className="flex justify-center pt-2">
-                <div className="w-12 h-1 bg-gray-300 dark:bg-gray-700 rounded-full"></div>
+            <div
+              className={`absolute bottom-0 left-0 right-0 bg-white dark:bg-neutral-950 rounded-t-3xl max-h-[90vh] overflow-hidden border-t border-neutral-200 dark:border-neutral-800 transition-transform duration-200 ${
+                isSwiping ? "select-none" : ""
+              }`}
+              style={{
+                transform:
+                  isSwiping && currentY > startY
+                    ? `translateY(${Math.min(currentY - startY, 100)}px)`
+                    : "translateY(0)",
+              }}
+            >
+              {/* Drag handle for swipe */}
+              <div
+                className="flex justify-center pt-2 pb-1 cursor-grab active:cursor-grabbing touch-none"
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+                onMouseDown={(e) => {
+                  // For desktop testing
+                  const mouseStartY = e.clientY;
+                  const handleMouseMove = (moveEvent: MouseEvent) => {
+                    if (!isSwiping) {
+                      setStartY(mouseStartY);
+                      setIsSwiping(true);
+                    }
+                    const deltaY = moveEvent.clientY - mouseStartY;
+                    if (deltaY > 0) {
+                      setCurrentY(moveEvent.clientY);
+                    }
+                  };
+                  const handleMouseUp = () => {
+                    const deltaY = currentY - startY;
+                    if (deltaY > swipeThreshold) {
+                      setShowAdjustModal(false);
+                      setSelectedProduct(null);
+                      setAdjustQuantity("");
+                      setAdjustNote("");
+                    }
+                    setIsSwiping(false);
+                    setStartY(0);
+                    setCurrentY(0);
+                    document.removeEventListener("mousemove", handleMouseMove);
+                    document.removeEventListener("mouseup", handleMouseUp);
+                  };
+                  document.addEventListener("mousemove", handleMouseMove);
+                  document.addEventListener("mouseup", handleMouseUp);
+                }}
+              >
+                <div className="w-12 h-1.5 bg-black/20 dark:bg-white/20 rounded-full"></div>
               </div>
 
               <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800">
@@ -1107,8 +1233,8 @@ flex items-center justify-center gap-1.5
                 </p>
               </div>
 
-              <div className="p-4 overflow-y-auto max-h-[60vh]">
-                <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl">
+              <div className="p-4 overflow-y-auto max-h-[70vh]">
+                <div className="mb-6 p-4 bg-gray-50 dark:bg-neutral-800 rounded-xl">
                   <div className="flex justify-between items-center">
                     <div>
                       <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -1137,13 +1263,13 @@ flex items-center justify-center gap-1.5
                   </div>
                 </div>
 
-                <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-xl mb-6">
+                <div className="flex bg-gray-100 dark:bg-neutral-900 p-1 rounded-xl mb-6">
                   <button
                     onClick={() => setAdjustType("add")}
                     className={`flex-1 py-3 rounded-lg flex items-center justify-center gap-2 ${
                       adjustType === "add"
-                        ? "bg-blue-500 text-white"
-                        : "text-gray-600 dark:text-gray-400"
+                        ? "bg-green-500 text-white dark:bg-green-600"
+                        : "text-black/60 dark:text-white/60"
                     }`}
                   >
                     <Plus className="w-4 h-4" />
@@ -1153,8 +1279,8 @@ flex items-center justify-center gap-1.5
                     onClick={() => setAdjustType("reduce")}
                     className={`flex-1 py-3 rounded-lg flex items-center justify-center gap-2 ${
                       adjustType === "reduce"
-                        ? "bg-red-500 text-white"
-                        : "text-gray-600 dark:text-gray-400"
+                        ? "bg-red-500 text-white dark:bg-red-600"
+                        : "text-black/60 dark:text-white/60"
                     }`}
                   >
                     <Minus className="w-4 h-4" />
@@ -1173,9 +1299,9 @@ flex items-center justify-center gap-1.5
                       value={adjustQuantity}
                       onChange={(e) => setAdjustQuantity(e.target.value)}
                       placeholder="Enter amount"
-                      className="flex-1 px-4 py-3 bg-gray-50 dark:bg-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white"
+                      className="flex-1 px-4 py-3 bg-gray-50 dark:bg-neutral-900 rounded-xl focus:outline-none focus:ring-2 focus:ring-neutral-500 text-gray-900 dark:text-white"
                     />
-                    <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800 rounded-xl text-gray-500 dark:text-gray-400">
+                    <div className="px-4 py-3 bg-gray-50 dark:bg-neutral-900 rounded-xl text-gray-500 dark:text-gray-400">
                       {selectedProduct.unit}
                     </div>
                   </div>
@@ -1190,7 +1316,7 @@ flex items-center justify-center gap-1.5
                     onChange={(e) => setAdjustNote(e.target.value)}
                     placeholder="Reason for adjustment"
                     rows={2}
-                    className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white resize-none"
+                    className="w-full px-4 py-3 bg-gray-50 dark:bg-neutral-900 rounded-xl focus:outline-none focus:ring-2 focus:ring-neutral-500 text-gray-900 dark:text-white resize-none"
                   />
                 </div>
 
@@ -1202,13 +1328,13 @@ flex items-center justify-center gap-1.5
                       setAdjustQuantity("");
                       setAdjustNote("");
                     }}
-                    className="flex-1 py-3 bg-gray-100 dark:bg-gray-800 rounded-xl font-medium active:scale-95 text-gray-700 dark:text-gray-300"
+                    className="flex-1 py-3 bg-gray-100 dark:bg-neutral-800 rounded-xl font-medium active:scale-95 text-gray-700 dark:text-gray-300"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleAdjustStock}
-                    className="flex-1 py-3 bg-blue-500 text-white rounded-xl font-medium flex items-center justify-center gap-2 active:scale-95"
+                    className="flex-1 py-3 bg-neutral-900 dark:bg-neutral-100 text-white dark:text-black rounded-xl font-medium flex items-center justify-center gap-2 active:scale-95"
                   >
                     <Check className="w-4 h-4" />
                     Confirm
@@ -1220,9 +1346,9 @@ flex items-center justify-center gap-1.5
         )}
 
         {showHistoryModal && selectedProduct && (
-          <div className="fixed inset-0 z-50">
+          <div className="fixed inset-0 z-50" ref={historyModalRef}>
             <div
-              className="absolute inset-0 bg-black/70 dark:bg-black/70"
+              className="absolute inset-0 bg-black/60"
               onClick={() => {
                 setShowHistoryModal(false);
                 setSelectedProduct(null);
@@ -1230,9 +1356,54 @@ flex items-center justify-center gap-1.5
               }}
             />
 
-            <div className="absolute bottom-0 left-0 right-0 bg-white dark:bg-neutral-950 rounded-t-3xl max-h-[90vh] overflow-hidden border-t border-neutral-200 dark:border-neutral-800">
-              <div className="flex justify-center pt-2">
-                <div className="w-12 h-1 bg-gray-300 dark:bg-gray-700 rounded-full"></div>
+            <div
+              className={`absolute bottom-0 left-0 right-0 bg-white dark:bg-neutral-950 rounded-t-3xl max-h-[90vh] overflow-hidden border-t border-black/10 dark:border-white/10 transition-transform duration-200 ${
+                isSwiping ? "select-none" : ""
+              }`}
+              style={{
+                transform:
+                  isSwiping && currentY > startY
+                    ? `translateY(${Math.min(currentY - startY, 100)}px)`
+                    : "translateY(0)",
+              }}
+            >
+              {/* Drag handle for swipe */}
+              <div
+                className="flex justify-center pt-2 pb-1 cursor-grab active:cursor-grabbing touch-none"
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+                onMouseDown={(e) => {
+                  // For desktop testing
+                  const mouseStartY = e.clientY;
+                  const handleMouseMove = (moveEvent: MouseEvent) => {
+                    if (!isSwiping) {
+                      setStartY(mouseStartY);
+                      setIsSwiping(true);
+                    }
+                    const deltaY = moveEvent.clientY - mouseStartY;
+                    if (deltaY > 0) {
+                      setCurrentY(moveEvent.clientY);
+                    }
+                  };
+                  const handleMouseUp = () => {
+                    const deltaY = currentY - startY;
+                    if (deltaY > swipeThreshold) {
+                      setShowHistoryModal(false);
+                      setSelectedProduct(null);
+                      setProductTransactions([]);
+                    }
+                    setIsSwiping(false);
+                    setStartY(0);
+                    setCurrentY(0);
+                    document.removeEventListener("mousemove", handleMouseMove);
+                    document.removeEventListener("mouseup", handleMouseUp);
+                  };
+                  document.addEventListener("mousemove", handleMouseMove);
+                  document.addEventListener("mouseup", handleMouseUp);
+                }}
+              >
+                <div className="w-12 h-1.5 bg-gray-300 dark:bg-gray-700 rounded-full"></div>
               </div>
 
               <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800">

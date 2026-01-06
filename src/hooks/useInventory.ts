@@ -1,10 +1,7 @@
-// src/hooks/useInventoryData.ts
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
 import { database } from "../config/firebase";
 import { loadFirebase } from "../config/firebaseLoader";
 const { ref, onValue, get, update, push, set } = await loadFirebase();
-// import { isValid } from "date-fns";
-
 
 type InventoryUnit =
   | "piece"
@@ -142,6 +139,15 @@ export const useInventoryData = (enableChunkedLoading = true): UseInventoryDataR
   const mountedRef = useRef(true);
   const initialLoadTimerRef = useRef<NodeJS.Timeout | null>(null);
   const chunkTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const scrollPositionRef = useRef<number>(0);
+  const shouldRestoreScrollRef = useRef<boolean>(false);
+
+  useLayoutEffect(() => {
+    if (shouldRestoreScrollRef.current) {
+        window.scrollTo(0, scrollPositionRef.current);
+        shouldRestoreScrollRef.current = false;
+    }
+  }, [products]);
 
   // Calculate products to display
   const displayProducts = enableChunkedLoading 
@@ -192,15 +198,20 @@ export const useInventoryData = (enableChunkedLoading = true): UseInventoryDataR
               // Sort by most recent update
               productsList.sort((a, b) => b.updatedAt - a.updatedAt);
               
+              if (mountedRef.current) { 
+                const previousProducts = memoryCache.products || [];
+                // Only capture scroll if something actually changed to avoid doing it on initial load.
+                if (previousProducts.length > 0 && JSON.stringify(previousProducts) !== JSON.stringify(productsList)) {
+                    scrollPositionRef.current = window.scrollY;
+                    shouldRestoreScrollRef.current = true;
+                }
+              }
+
               setProducts(productsList);
               memoryCache.products = productsList;
               memoryCache.lastUpdated = Date.now();
               
-              // Reset display limit when new products come in
-              if (enableChunkedLoading) {
-                setDisplayLimit(CHUNK_SIZE);
-                memoryCache.displayLimit = CHUNK_SIZE;
-              }
+
             } else {
               setProducts([]);
               memoryCache.products = [];
@@ -380,17 +391,6 @@ export const useInventoryData = (enableChunkedLoading = true): UseInventoryDataR
           stock: newStock,
           updatedAt: Date.now(),
         });
-
-        // Update local cache
-        if (memoryCache.products) {
-          const updatedProducts = memoryCache.products.map((p) =>
-            p.id === productId
-              ? { ...p, stock: newStock, updatedAt: Date.now() }
-              : p
-          );
-          memoryCache.products = updatedProducts;
-          setProducts(updatedProducts);
-        }
         
       } catch (err: any) {
         console.error("Transaction error:", err);
