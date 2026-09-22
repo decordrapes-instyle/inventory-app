@@ -1,0 +1,73 @@
+﻿├── icons
+│   ├── icon-128.webp
+│   ├── icon-192.webp
+│   ├── icon-256.webp
+│   ├── icon-48.webp
+│   ├── icon-512.webp
+│   ├── icon-72.webp
+│   └── icon-96.webp
+├── public
+│   ├── icons
+│   │   ├── icon.ico
+│   │   ├── icon-180.png
+│   │   ├── icon-192.png
+│   │   ├── icon-512.png
+│   │   └── maskable-512.png
+│   ├── _redirects
+│   ├── manifest.webmanifest
+│   └── sw.js
+├── resources
+│   ├── icon.png
+│   └── splash.png
+├── src
+│   ├── components
+│   │   ├── ui
+│   │   │   ├── calender.tsx
+│   │   │   └── popover.tsx
+│   │   ├── AppNavigation.tsx
+│   │   ├── ProtectedRoute.tsx
+│   │   └── TransactionHistory.tsx
+│   ├── config
+│   │   ├── firebase.ts
+│   │   └── firebaseLoader.ts
+│   ├── context
+│   │   ├── AuthContext.tsx
+│   │   └── NavigationContext.tsx
+│   ├── hooks
+│   │   ├── useAutoInventory.ts
+│   │   ├── useInventory.ts
+│   │   ├── useProducts.ts
+│   │   └── useStockData.ts
+│   ├── lib
+│   │   └── utils.ts
+│   ├── pages
+│   │   ├── AutoInventory.tsx
+│   │   ├── EditProfilePage.tsx
+│   │   ├── InventoryLog.tsx
+│   │   ├── InventoryPage.tsx
+│   │   ├── LoginPage.tsx
+│   │   ├── NotificationsPage.tsx
+│   │   ├── ProductsPage.tsx
+│   │   ├── ProfilePage.tsx
+│   │   └── StockPage.tsx
+│   ├── App.tsx
+│   ├── index.css
+│   ├── main.tsx
+│   ├── statusBar.ts
+│   └── vite-env.d.ts
+├── .gitignore
+├── build.txt
+├── capacitor.config.ts
+├── eslint.config.js
+├── index.html
+├── package.json
+├── package-lock.json
+├── postcss.config.js
+├── README.md
+├── stats.html
+├── tailwind.config.js
+├── tree.txt
+├── tsconfig.app.json
+├── tsconfig.json
+├── tsconfig.node.json
+└── vite.config.ts

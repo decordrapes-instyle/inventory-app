@@ -1,0 +1,85 @@
+{
+  "project_info": {
+    "project_number": "175917446618",
+    "firebase_url": "https://decor-drapes-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "decor-drapes",
+    "storage_bucket": "decor-drapes.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:175917446618:android:dfd7d29b6dcc22a7873ce3",
+        "android_client_info": {
+          "package_name": "com.decordrapesinstyle.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "175917446618-8ge2dt0mfmgb05c34o90m3o02i6mn42h.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.decordrapesinstyle.app",
+            "certificate_hash": "9187c1a6335d66f8a3a2fb520f4a669f834b5db9"
+          }
+        },
+        {
+          "client_id": "175917446618-ha1pnohtakdup8jqjhk8o9410tk98s3v.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.decordrapesinstyle.app",
+            "certificate_hash": "224d669b9132f28e659f7b500c4f1d9fb8f0945c"
+          }
+        },
+        {
+          "client_id": "175917446618-irbbkqda7lgrdckeobfofmvrsjr9n383.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCwpsX-EcZsmxufxUqoRo7NlJiKu4oflcg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "175917446618-irbbkqda7lgrdckeobfofmvrsjr9n383.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:175917446618:android:f299c2a3abbfd36a873ce3",
+        "android_client_info": {
+          "package_name": "com.decordrapesinstyle.inventory"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "175917446618-irbbkqda7lgrdckeobfofmvrsjr9n383.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCwpsX-EcZsmxufxUqoRo7NlJiKu4oflcg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "175917446618-irbbkqda7lgrdckeobfofmvrsjr9n383.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

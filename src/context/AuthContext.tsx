@@ -16,7 +16,6 @@ const setLocalStorage = (key: string, value: any) => {
   localStorage.setItem(key, JSON.stringify(value));
 };
 
-// Types
 interface UserProfile {
   uid: string;
   email: string;
@@ -24,6 +23,10 @@ interface UserProfile {
   profileImage: string;
   role: "customer" | "production" | "admin";
   createdAt: number;
+  // new ↓
+  phone?: string;
+  bio?: string;
+  location?: string;
 }
 
 interface AuthContextType {

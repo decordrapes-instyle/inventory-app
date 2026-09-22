@@ -1,4 +1,6 @@
-import { initializeApp } from "firebase/app";
+
+
+import { initializeApp, getApps, getApp } from "firebase/app";
 import {
   getAuth,
   GoogleAuthProvider,
@@ -34,15 +36,12 @@ const firebaseConfig = {
   measurementId: "G-8W8BZMLVZC",
 };
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const database = getDatabase(app);
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-try {
-  console.info("Connected to Database");
-} catch (error) {
-  console.warn("Could not configure persistence");
-}
+const auth = getAuth(app);
+const database: Database = getDatabase(app);
+
+console.info("[FB] Connected to Realtime Database");
 
 export {
   auth,

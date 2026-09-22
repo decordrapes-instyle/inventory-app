@@ -1,6 +1,10 @@
+// src/hooks/useStockData.ts
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { database } from "../config/firebase";
-import { onValue, ref } from "firebase/database";
+import { loadFirebase } from "../config/firebaseLoader";
+import { cache } from "../lib/cache";
+
+const { ref, onValue } = await loadFirebase();
 
 export interface StockProduct {
   id: string;
@@ -10,7 +14,7 @@ export interface StockProduct {
   cost?: number;
   imageUrl?: string;
   timestamp: number;
-  source: 'inventory' | 'manual';
+  source: "inventory" | "manual";
   originalId: string;
 }
 
@@ -18,7 +22,7 @@ export interface InventoryTransaction {
   id: string;
   productId: string;
   productName: string;
-  type: 'add' | 'remove' | 'adjust' | 'update';
+  type: "add" | "remove" | "adjust" | "update";
   quantity: number;
   previousQuantity?: number;
   rate?: number;
@@ -26,7 +30,7 @@ export interface InventoryTransaction {
   timestamp: number;
   createdAt: number;
   remarks?: string;
-  source?: 'inventory' | 'manual';
+  source?: "inventory" | "manual";
 }
 
 interface AnalyticsData {
@@ -44,253 +48,158 @@ interface AnalyticsData {
   recentTransactions: InventoryTransaction[];
 }
 
+const S_KEY = "stockData";
+const T_KEY = "stockTx";
 
-interface UseStockDataReturn {
-  analytics: AnalyticsData;
-  loading: boolean;
-  stockData: StockProduct[];
-  transactions: InventoryTransaction[];
-  refreshData: () => void;
-}
+export function useStockData() {
+  const [stockData, setStockData] = useState<StockProduct[]>(
+    () => cache.get<StockProduct[]>(S_KEY) ?? []
+  );
+  const [allTransactions, setAllTransactions] = useState<InventoryTransaction[]>(
+    () => cache.get<InventoryTransaction[]>(T_KEY) ?? []
+  );
+  const [loading, setLoading] = useState(() => !cache.get(S_KEY));
 
-export function useStockData(): UseStockDataReturn {
-  const [stockData, setStockData] = useState<StockProduct[]>([]);
-  const [allTransactions, setAllTransactions] = useState<InventoryTransaction[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // Get today's date range (start of day to now)
   const getTodayRange = useCallback(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const startOfDay = today.getTime();
-    const endOfDay = startOfDay + 24 * 60 * 60 * 1000;
-    return { startOfDay, endOfDay };
+    const t = new Date();
+    t.setHours(0, 0, 0, 0);
+    const startOfDay = t.getTime();
+    return { startOfDay, endOfDay: startOfDay + 86400000 };
   }, []);
 
-  // Fetch all transactions for analytics
-  const fetchAllTransactions = useCallback(() => {
-    const transactionsRef = ref(database, "quotations/inventoryTransaction");
-    
-    const unsubscribe = onValue(transactionsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const transactionsList: InventoryTransaction[] = [];
-        
-        // Loop through all products
-        Object.entries(data).forEach(([productId, productTransactions]: [string, any]) => {
-          if (productTransactions) {
-            // Loop through all transactions for this product
-            Object.entries(productTransactions).forEach(([firebaseKey, transactionData]: [string, any]) => {
-              if (transactionData) {
-                transactionsList.push({
-                  id: `${productId}_${firebaseKey}`,
-                  productId,
-                  productName: transactionData.productName || "Unknown Product",
-                  type: transactionData.type || 'update',
-                  quantity: transactionData.quantity || 0,
-                  previousQuantity: transactionData.previousQuantity,
-                  rate: transactionData.rate,
-                  previousRate: transactionData.previousRate,
-                  timestamp: transactionData.timestamp || transactionData.createdAt || Date.now(),
-                  createdAt: transactionData.createdAt || transactionData.timestamp || Date.now(),
-                  remarks: transactionData.remarks,
-                  source: transactionData.source,
-                });
-              }
-            });
-          }
-        });
-        
-        // Sort by timestamp descending (newest first)
-        transactionsList.sort((a, b) => b.timestamp - a.timestamp);
-        setAllTransactions(transactionsList);
-      } else {
-        setAllTransactions([]);
-      }
-    });
-
-    return unsubscribe;
-  }, []);
-
-  const fetchInventoryData = useCallback(() => {
-    const inventoryRef = ref(database, "quotations/inventory");
-    const manualInventoryRef = ref(database, "quotations/manualInventory");
-    const productsRef = ref(database, "quotations/products");
-
-    let inventoryLoaded = false;
-    let manualLoaded = false;
-    let productsLoaded = false;
-    
-    let inventoryData: StockProduct[] = [];
-    let manualData: StockProduct[] = [];
-    let productsData: Record<string, any> = {};
-
-    const checkAndUpdate = () => {
-      if (inventoryLoaded && manualLoaded && productsLoaded) {
-        // Process inventory items with rates from products
-        const processedInventoryData = inventoryData.map(item => {
-          const productInfo = productsData[item.originalId] || {};
-          return {
-            ...item,
-            rate: productInfo.rate || productInfo.cost || 0,
-            cost: productInfo.cost || productInfo.rate || 0,
-          };
-        });
-
-        const combined = [...processedInventoryData, ...manualData]
-          .sort((a, b) => b.timestamp - a.timestamp);
-        setStockData(combined);
-        setLoading(false);
-      }
-    };
-
-    const unsubscribeInventory = onValue(inventoryRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        inventoryData = Object.entries(data).map(([id, product]: [string, any]) => ({
-          id: `inventory_${id}`,
-          name: product.productName || product.name || "Unnamed Product",
-          stock: product.stock || 0,
-          rate: 0, // Will be filled from products data
-          cost: 0, // Will be filled from products data
-          imageUrl: product.imageUrl,
-          timestamp: product.timestamp || product.modifiedAt || product.createdAt || Date.now(),
-          source: 'inventory' as const,
-          originalId: id,
-        }));
-      } else {
-        inventoryData = [];
-      }
-      inventoryLoaded = true;
-      checkAndUpdate();
-    });
-
-    const unsubscribeManual = onValue(manualInventoryRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        manualData = Object.entries(data).map(([id, product]: [string, any]) => ({
-          id: `manual_${id}`,
-          name: product.productName || product.name || "Unnamed Product",
-          stock: product.stock || 0,
-          rate: product.rate || 0,
-          cost: product.cost || product.rate || 0,
-          imageUrl: product.imageUrl,
-          timestamp: product.timestamp || product.modifiedAt || product.createdAt || Date.now(),
-          source: 'manual' as const,
-          originalId: id,
-        }));
-      } else {
-        manualData = [];
-      }
-      manualLoaded = true;
-      checkAndUpdate();
-    });
-
-    const unsubscribeProducts = onValue(productsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        productsData = data;
-      } else {
-        productsData = {};
-      }
-      productsLoaded = true;
-      checkAndUpdate();
-    });
-
-    return () => {
-      unsubscribeInventory();
-      unsubscribeManual();
-      unsubscribeProducts();
-    };
-  }, []);
-
+  // Transactions — read from the CORRECT path (plural).
   useEffect(() => {
-    const unsubscribeInventory = fetchInventoryData();
-    const unsubscribeTransactions = fetchAllTransactions();
+    const txRef = ref(database, "quotations/inventoryTransactions");
+    const unsub = onValue(txRef, (snap) => {
+      if (!snap.exists()) {
+        setAllTransactions([]);
+        cache.set(T_KEY, []);
+        return;
+      }
+      const list: InventoryTransaction[] = [];
+      snap.forEach((productNode) => {
+        const pid = productNode.key!;
+        productNode.forEach((txNode) => {
+          const t: any = txNode.val();
+          list.push({
+            id: `${pid}_${txNode.key}`,
+            productId: pid,
+            productName: t.productName || "Unknown Product",
+            type: t.type || "update",
+            quantity: t.quantity ?? t.quantityChange ?? 0,
+            previousQuantity: t.previousQuantity,
+            rate: t.rate,
+            previousRate: t.previousRate,
+            timestamp: t.timestamp || t.createdAt || Date.now(),
+            createdAt: t.createdAt || t.timestamp || Date.now(),
+            remarks: t.remarks || t.note,
+            source: t.source,
+          });
+        });
+      });
+      list.sort((a, b) => b.timestamp - a.timestamp);
+      setAllTransactions(list);
+      cache.set(T_KEY, list);
+    });
+    return () => unsub();
+  }, []);
 
-    return () => {
-      unsubscribeInventory();
-      unsubscribeTransactions();
+  // Inventory + manual inventory + product rates
+  useEffect(() => {
+    let invList: StockProduct[] = [];
+    let manualList: StockProduct[] = [];
+    let productsMap: Record<string, any> = {};
+    let a = false, b = false, c = false;
+
+    const commit = () => {
+      if (!(a && b && c)) return;
+      const inv = invList.map((p) => {
+        const info = productsMap[p.originalId] || {};
+        return { ...p, rate: info.rate || info.cost || 0, cost: info.cost || info.rate || 0 };
+      });
+      const combined = [...inv, ...manualList].sort((x, y) => y.timestamp - x.timestamp);
+      setStockData(combined);
+      cache.set(S_KEY, combined);
+      setLoading(false);
     };
-  }, [fetchInventoryData, fetchAllTransactions]);
 
-  // Calculate analytics data
-  const analytics = useMemo((): AnalyticsData => {
-    if (loading) {
-      return {
-        totalValue: 0,
-        totalItems: 0,
-        totalUnits: 0,
-        todayAddedValue: 0,
-        todayReducedValue: 0,
-        todayNetChange: 0,
-        inventoryCount: 0,
-        manualCount: 0,
-        inventoryValue: 0, // NEW
-        manualValue: 0, // NEW
-        recentProducts: [],
-        recentTransactions: [],
-      };
-    }
-     // Calculate separate values
+    const u1 = onValue(ref(database, "quotations/inventory"), (snap) => {
+      invList = [];
+      if (snap.exists()) {
+        snap.forEach((child) => {
+          const v: any = child.val();
+          invList.push({
+            id: `inventory_${child.key}`,
+            name: v.productName || v.name || "Unnamed",
+            stock: v.stock || 0,
+            rate: 0,
+            cost: 0,
+            imageUrl: v.imageUrl,
+            timestamp: v.timestamp || v.modifiedAt || v.createdAt || Date.now(),
+            source: "inventory",
+            originalId: child.key!,
+          });
+        });
+      }
+      a = true;
+      commit();
+    });
+
+    const u2 = onValue(ref(database, "quotations/manualInventory"), (snap) => {
+      manualList = [];
+      if (snap.exists()) {
+        snap.forEach((child) => {
+          const v: any = child.val();
+          manualList.push({
+            id: `manual_${child.key}`,
+            name: v.productName || v.name || "Unnamed",
+            stock: v.stock || 0,
+            rate: v.rate || 0,
+            cost: v.cost || v.rate || 0,
+            imageUrl: v.imageUrl,
+            timestamp: v.timestamp || v.modifiedAt || v.createdAt || Date.now(),
+            source: "manual",
+            originalId: child.key!,
+          });
+        });
+      }
+      b = true;
+      commit();
+    });
+
+    const u3 = onValue(ref(database, "quotations/products"), (snap) => {
+      productsMap = snap.exists() ? snap.val() : {};
+      c = true;
+      commit();
+    });
+
+    return () => { u1(); u2(); u3(); };
+  }, []);
+
+  const analytics = useMemo<AnalyticsData>(() => {
     let inventoryValue = 0;
     let manualValue = 0;
-    stockData.forEach(product => {
-    const productValue = product.stock * (product.rate || 0);
-    if (product.source === 'inventory') {
-      inventoryValue += productValue;
-    } else {
-      manualValue += productValue;
+    for (const p of stockData) {
+      const v = p.stock * (p.rate || 0);
+      if (p.source === "inventory") inventoryValue += v;
+      else manualValue += v;
     }
-  });
-  
-    // Calculate totals using rate for value calculation
-    const totalValue = stockData.reduce((acc, product) => 
-      acc + (product.stock * (product.rate || 0)), 0
-    );
-    
+    const totalValue = inventoryValue + manualValue;
     const totalItems = stockData.length;
-    const totalUnits = stockData.reduce((acc, product) => acc + product.stock, 0);
-    
-    const inventoryCount = stockData.filter(p => p.source === 'inventory').length;
-    const manualCount = stockData.filter(p => p.source === 'manual').length;
+    const totalUnits = stockData.reduce((s, p) => s + p.stock, 0);
+    const inventoryCount = stockData.filter((p) => p.source === "inventory").length;
+    const manualCount = stockData.filter((p) => p.source === "manual").length;
 
-    // Get today's transactions
     const { startOfDay, endOfDay } = getTodayRange();
-    const todayTransactions = allTransactions.filter(
-      t => t.timestamp >= startOfDay && t.timestamp <= endOfDay
-    );
-
-    // Calculate today's added and reduced values
     let todayAddedValue = 0;
     let todayReducedValue = 0;
 
-    todayTransactions.forEach(transaction => {
-      const transactionValue = Math.abs(transaction.quantity) * (transaction.rate || 0);
-      
-      if (transaction.type === 'add') {
-        todayAddedValue += transactionValue;
-      } else if (transaction.type === 'remove') {
-        todayReducedValue += transactionValue;
-      } else if (transaction.type === 'adjust') {
-        // For adjustments, we need to check if it's positive or negative
-        if (transaction.quantity > 0) {
-          todayAddedValue += transactionValue;
-        } else {
-          todayReducedValue += Math.abs(transactionValue);
-        }
-      }
-    });
-
-    const todayNetChange = todayAddedValue - todayReducedValue;
-
-    // Get recent products (top 8 by modification date)
-    const recentProducts = [...stockData]
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, 8);
-
-    // Get recent transactions (top 10)
-    const recentTransactions = allTransactions.slice(0, 10);
+    for (const t of allTransactions) {
+      if (t.timestamp < startOfDay || t.timestamp > endOfDay) continue;
+      const v = Math.abs(t.quantity) * (t.rate || 0);
+      if (t.type === "add" || (t.type === "adjust" && t.quantity > 0)) todayAddedValue += v;
+      else if (t.type === "remove" || (t.type === "adjust" && t.quantity < 0)) todayReducedValue += v;
+    }
 
     return {
       totalValue,
@@ -298,28 +207,17 @@ export function useStockData(): UseStockDataReturn {
       totalUnits,
       todayAddedValue,
       todayReducedValue,
-      todayNetChange,
+      todayNetChange: todayAddedValue - todayReducedValue,
       inventoryCount,
       manualCount,
-      recentProducts,
-      inventoryValue, // NEW
-      manualValue, // NEW
-      recentTransactions,
+      inventoryValue,
+      manualValue,
+      recentProducts: [...stockData].sort((x, y) => y.timestamp - x.timestamp).slice(0, 8),
+      recentTransactions: allTransactions.slice(0, 10),
     };
-  }, [stockData, allTransactions, loading, getTodayRange]);
+  }, [stockData, allTransactions, getTodayRange]);
 
-  const refreshData = useCallback(() => {
-    setLoading(true);
-    // Re-fetch both data sources
-    fetchInventoryData();
-    fetchAllTransactions();
-  }, [fetchInventoryData, fetchAllTransactions]);
+  const refreshData = useCallback(() => { /* realtime keeps fresh */ }, []);
 
-  return {
-    analytics,
-    loading,
-    stockData,
-    transactions: allTransactions,
-    refreshData,
-  };
+  return { analytics, loading, stockData, transactions: allTransactions, refreshData };
 }

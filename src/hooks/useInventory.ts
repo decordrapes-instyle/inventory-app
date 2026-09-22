@@ -1,31 +1,21 @@
-import { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
+// src/hooks/useInventory.ts
+import { useState, useEffect, useCallback } from "react";
 import { database } from "../config/firebase";
 import { loadFirebase } from "../config/firebaseLoader";
+import { cache } from "../lib/cache";
+
 const { ref, onValue, get, update, push, set } = await loadFirebase();
 
 type InventoryUnit =
-  | "piece"
-  | "meter"
-  | "foot"
-  | "length"
-  | "box"
-  | "sqft"
-  | "pcs"
-  | "kgs"
-  | "pkt"
-  | "roll"
-  | "set"
-  | "carton"
-  | "bundle"
-  | "dozen"
-  | "kg"
-  | "inch"
-  | "cm"
-  | "mm";
+  | "piece" | "meter" | "foot" | "length" | "box" | "sqft" | "pcs"
+  | "kgs" | "pkt" | "roll" | "set" | "carton" | "bundle" | "dozen"
+  | "kg" | "inch" | "cm" | "mm";
 
-interface Product {
+export interface Product {
   id: string;
   productId: string;
+  /** which Firebase path this product came from — used by adjustStock */
+  __path?: "manualInventory" | "inventory";
   rate?: number;
   productName: string;
   stock: number;
@@ -36,7 +26,7 @@ interface Product {
   updatedAt: number;
 }
 
-interface InventoryGroup {
+export interface InventoryGroup {
   id: string;
   name: string;
   imageUrl?: string;
@@ -52,7 +42,7 @@ interface InventoryGroup {
   updatedAt: number;
 }
 
-interface Transaction {
+export interface Transaction {
   id: string;
   productId: string;
   productName: string;
@@ -66,429 +56,201 @@ interface Transaction {
   performedBy?: string;
 }
 
-// Add these to the existing return type interface
-interface UseInventoryDataReturn {
-  products: Product[];
-  inventoryGroups: InventoryGroup[];
-  loading: boolean;
-  error: string | null;
-  adjustStock: (
-    productId: string,
-    productName: string,
-    quantityChange: number,
-    unit: InventoryUnit,
-    note: string,
-    performedBy: string
-  ) => Promise<void>;
-  getProductHistory: (productId: string) => Promise<Transaction[]>;
-  refreshData: () => Promise<void>;
-  // Add search function
-  searchProducts: (searchTerm: string) => Product[];
-  // Add this
-  allProducts: Product[];
-}
+const PRODUCTS_KEY = "inv:mergedProducts";
+const GROUPS_KEY = "inv:groups";
+const CHUNK_INITIAL = 24;
+const CHUNK_STEP = 24;
 
-// Configuration
-const CHUNK_SIZE = 30; // Load 30 items initially
-const CHUNK_INCREMENT = 20; // Load 20 more items each time
-const INITIAL_LOAD_DELAY = 2000; // 2 seconds before loading more
-
-// Simple memory cache
-const memoryCache = {
-  products: null as Product[] | null,
-  groups: null as InventoryGroup[] | null,
-  lastUpdated: 0,
-  loadedChunks: 0,
-  displayLimit: CHUNK_SIZE,
-  isValid: false, // Add isValid property
-};
-
-// Track listeners
-let isListening = false;
-let unsubscribeCallbacks: Array<() => void> = [];
-
-export const useInventoryData = (enableChunkedLoading = true): UseInventoryDataReturn & { 
-  loadMore: () => void;
-  hasMore: boolean;
-  displayProducts: Product[];
-  searchProducts: (searchTerm: string) => Product[];
-  allProducts: Product[];
-
-} => {
-  const [products, setProducts] = useState<Product[]>(() => {
-    if (memoryCache.products) {
-      return memoryCache.products;
-    }
-    return [];
-  });
-  
-  const [inventoryGroups, setInventoryGroups] = useState<InventoryGroup[]>(() => {
-    if (memoryCache.groups) {
-      return memoryCache.groups;
-    }
-    return [];
-  });
-  
-  const [loading, setLoading] = useState(() => !memoryCache.isValid);
-  const [error, setError] = useState<string | null>(null);
-  const [displayLimit, setDisplayLimit] = useState(() => 
-    enableChunkedLoading ? memoryCache.displayLimit : Infinity
+export const useInventoryData = (enableChunkedLoading = true) => {
+  const [products, setProducts] = useState<Product[]>(
+    () => cache.get<Product[]>(PRODUCTS_KEY) ?? []
   );
-  const [chunkLoading, setChunkLoading] = useState(false);
-  
-  const mountedRef = useRef(true);
-  const initialLoadTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const chunkTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const scrollPositionRef = useRef<number>(0);
-  const shouldRestoreScrollRef = useRef<boolean>(false);
+  const [inventoryGroups, setInventoryGroups] = useState<InventoryGroup[]>(
+    () => cache.get<InventoryGroup[]>(GROUPS_KEY) ?? []
+  );
+  const [loading, setLoading] = useState(
+    () => !cache.get<Product[]>(PRODUCTS_KEY)
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [displayLimit, setDisplayLimit] = useState(CHUNK_INITIAL);
 
-  useLayoutEffect(() => {
-    if (shouldRestoreScrollRef.current) {
-        window.scrollTo(0, scrollPositionRef.current);
-        shouldRestoreScrollRef.current = false;
-    }
-  }, [products]);
-
-  // Calculate products to display
-  const displayProducts = enableChunkedLoading 
-    ? products.slice(0, displayLimit)
-    : products;
-
-  const hasMore = enableChunkedLoading && products.length > displayLimit;
-
-  // Setup realtime listeners
   useEffect(() => {
-    mountedRef.current = true;
+    const manualRef = ref(database, "quotations/manualInventory");
+    const autoRef = ref(database, "quotations/inventory");
+    const groupsRef = ref(database, "quotations/inventoryGrp");
 
-    const setupListeners = () => {
-      if (isListening) {
-        // Already listening, just update from cache
-        if (memoryCache.products) {
-          setProducts(memoryCache.products);
-        }
-        if (memoryCache.groups) {
-          setInventoryGroups(memoryCache.groups);
-        }
-        setLoading(false);
-        return;
+    let manualList: Product[] = [];
+    let autoList: Product[] = [];
+    let manualReady = false;
+    let autoReady = false;
+
+    const commit = () => {
+      if (!manualReady || !autoReady) return;
+      // manualInventory entries win on productId collision
+      const map = new Map<string, Product>();
+      for (const p of manualList) map.set(p.productId || p.id, p);
+      for (const p of autoList) {
+        const key = p.productId || p.id;
+        if (!map.has(key)) map.set(key, p);
       }
-
-      isListening = true;
-      
-      // Only show loading on initial app load
-      if (!memoryCache.products || !memoryCache.groups) {
-        setLoading(true);
-      }
-
-      try {
-        // Products listener
-        const productsRef = ref(database, "quotations/manualInventory");
-        const productsUnsubscribe = onValue(
-          productsRef,
-          (snapshot) => {
-            if (!mountedRef.current) return;
-
-            if (snapshot.exists()) {
-              const data = snapshot.val();
-              const productsList = Object.entries(data).map(([key, value]: any) => ({
-                id: key,
-                ...value,
-              }));
-              
-              // Sort by most recent update
-              productsList.sort((a, b) => b.updatedAt - a.updatedAt);
-              
-              if (mountedRef.current) { 
-                const previousProducts = memoryCache.products || [];
-                // Only capture scroll if something actually changed to avoid doing it on initial load.
-                if (previousProducts.length > 0 && JSON.stringify(previousProducts) !== JSON.stringify(productsList)) {
-                    scrollPositionRef.current = window.scrollY;
-                    shouldRestoreScrollRef.current = true;
-                }
-              }
-
-              setProducts(productsList);
-              memoryCache.products = productsList;
-              memoryCache.lastUpdated = Date.now();
-              
-
-            } else {
-              setProducts([]);
-              memoryCache.products = [];
-              memoryCache.lastUpdated = Date.now();
-            }
-            
-            setLoading(false);
-          },
-          (err) => {
-            console.error("Error in products listener:", err);
-            if (mountedRef.current) {
-              setError("Failed to sync products in realtime");
-              setLoading(false);
-            }
-          }
-        );
-
-        // Groups listener
-        const groupsRef = ref(database, "quotations/inventoryGrp");
-        const groupsUnsubscribe = onValue(
-          groupsRef,
-          (snapshot) => {
-            if (!mountedRef.current) return;
-
-            if (snapshot.exists()) {
-              const groupsData = snapshot.val();
-              const groupsList = Object.entries(groupsData)
-                .map(([key, value]: any) => ({
-                  id: key,
-                  ...value,
-                }))
-                .filter((group: InventoryGroup) =>
-                  group.items.some((item) => item.inventoryType === "manual")
-                )
-                .map((group: InventoryGroup) => ({
-                  ...group,
-                  items: group.items.filter(
-                    (item) => item.inventoryType === "manual"
-                  ),
-                }));
-
-              setInventoryGroups(groupsList);
-              memoryCache.groups = groupsList;
-              memoryCache.lastUpdated = Date.now();
-            } else {
-              setInventoryGroups([]);
-              memoryCache.groups = [];
-              memoryCache.lastUpdated = Date.now();
-            }
-            
-            setLoading(false);
-          },
-          (err) => {
-            console.error("Error in groups listener:", err);
-            if (mountedRef.current) {
-              setError("Failed to sync groups in realtime");
-              setLoading(false);
-            }
-          }
-        );
-
-        unsubscribeCallbacks.push(productsUnsubscribe, groupsUnsubscribe);
-      } catch (err) {
-        console.error("Error setting up listeners:", err);
-        if (mountedRef.current) {
-          setError("Failed to initialize inventory data");
-          setLoading(false);
-        }
-      }
+      const merged = Array.from(map.values()).sort(
+        (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)
+      );
+      setProducts(merged);
+      cache.set(PRODUCTS_KEY, merged);
+      setLoading(false);
     };
 
-    // Delay setup to prevent blocking main thread
-    const timer = setTimeout(() => {
-      setupListeners();
-    }, 50);
-
-    return () => {
-      clearTimeout(timer);
-      mountedRef.current = false;
+    const normalize = (
+      snap: any,
+      path: "manualInventory" | "inventory"
+    ): Product[] => {
+      const list: Product[] = [];
+      if (!snap.exists()) return list;
+      snap.forEach((child: any) => {
+        const v: any = child.val() || {};
+        list.push({
+          id: child.key!,
+          __path: path,
+          productId: v.productId || child.key!,
+          productName: v.productName || "Unnamed Product",
+          stock: typeof v.stock === "number" ? v.stock : 0,
+          unit: v.unit || "pcs",
+          rate: v.rate ?? v.cost,
+          imageUrl: v.imageUrl,
+          notes: v.notes,
+          createdAt: v.createdAt || 0,
+          updatedAt: v.updatedAt || 0,
+        });
+      });
+      return list;
     };
-  }, [enableChunkedLoading]);
 
-  // Auto-load more chunks after initial load
-  useEffect(() => {
-    if (!enableChunkedLoading || !hasMore || loading) return;
-
-    // Clear any existing timers
-    if (initialLoadTimerRef.current) {
-      clearTimeout(initialLoadTimerRef.current);
-    }
-
-    // Load first chunk automatically after 2 seconds
-    initialLoadTimerRef.current = setTimeout(() => {
-      if (mountedRef.current && hasMore && !chunkLoading) {
-        loadMore();
+    const unsubManual = onValue(
+      manualRef,
+      (snap) => {
+        manualList = normalize(snap, "manualInventory");
+        manualReady = true;
+        commit();
+      },
+      (err) => {
+        console.error("[inv] manual listener", err);
+        manualReady = true;
+        commit();
       }
-    }, INITIAL_LOAD_DELAY);
+    );
+
+    const unsubAuto = onValue(
+      autoRef,
+      (snap) => {
+        autoList = normalize(snap, "inventory");
+        autoReady = true;
+        commit();
+      },
+      (err) => {
+        console.error("[inv] auto listener", err);
+        autoReady = true;
+        commit();
+      }
+    );
+
+    const unsubGroups = onValue(
+      groupsRef,
+      (snap) => {
+        const list: InventoryGroup[] = [];
+        if (snap.exists()) {
+          snap.forEach((child: any) => {
+            const g: any = { id: child.key!, ...(child.val() || {}) };
+            if (!Array.isArray(g.items)) return;
+            const manual = g.items.filter(
+              (i: any) => i?.inventoryType === "manual"
+            );
+            if (manual.length === 0) return;
+            list.push({ ...g, items: manual });
+          });
+        }
+        setInventoryGroups(list);
+        cache.set(GROUPS_KEY, list);
+      },
+      (err) => console.error("[inv] groups listener", err)
+    );
 
     return () => {
-      if (initialLoadTimerRef.current) {
-        clearTimeout(initialLoadTimerRef.current);
-      }
-    };
-  }, [enableChunkedLoading, hasMore, loading]);
-
-  // Load more products function
-  const loadMore = useCallback(() => {
-    if (!enableChunkedLoading || !hasMore || chunkLoading) return;
-
-    setChunkLoading(true);
-    
-    // Simulate loading delay for better UX
-    setTimeout(() => {
-      if (mountedRef.current) {
-        const newLimit = Math.min(
-          displayLimit + CHUNK_INCREMENT,
-          products.length
-        );
-        setDisplayLimit(newLimit);
-        memoryCache.displayLimit = newLimit;
-        setChunkLoading(false);
-      }
-    }, 300);
-  }, [enableChunkedLoading, displayLimit, hasMore, chunkLoading, products.length]);
-
-  // Cleanup
-  useEffect(() => {
-    return () => {
-      mountedRef.current = false;
-      if (initialLoadTimerRef.current) {
-        clearTimeout(initialLoadTimerRef.current);
-      }
-      if (chunkTimerRef.current) {
-        clearTimeout(chunkTimerRef.current);
-      }
+      unsubManual();
+      unsubAuto();
+      unsubGroups();
     };
   }, []);
 
+  const displayProducts = enableChunkedLoading
+    ? products.slice(0, displayLimit)
+    : products;
+  const hasMore = enableChunkedLoading && products.length > displayLimit;
+
+  const loadMore = useCallback(() => setDisplayLimit((p) => p + CHUNK_STEP), []);
+
+  const searchProducts = useCallback(
+    (term: string) => {
+      if (!term.trim()) return products;
+      const t = term.toLowerCase();
+      return products.filter(
+        (p) =>
+          p.productName.toLowerCase().includes(t) ||
+          p.productId.toLowerCase().includes(t)
+      );
+    },
+    [products]
+  );
+
   const adjustStock = useCallback(
     async (
-      productId: string,
-      productName: string,
+      product: Product,
       quantityChange: number,
-      unit: InventoryUnit,
       note: string,
       performedBy: string
-    ): Promise<void> => {
-      try {
-        const productRef = ref(database, `quotations/manualInventory/${productId}`);
-        const snapshot = await get(productRef);
-        const currentProduct = snapshot.val();
+    ) => {
+      const path = product.__path || "manualInventory";
+      const productRef = ref(database, `quotations/${path}/${product.id}`);
+      const snap = await get(productRef);
+      const cur = snap.val();
+      if (!cur) throw new Error("Product not found");
+      const newStock = (cur.stock || 0) + quantityChange;
+      if (newStock < 0) throw new Error("Stock cannot be negative");
 
-        if (!currentProduct) {
-          throw new Error("Product not found");
-        }
-
-        const currentStock = currentProduct.stock || 0;
-        const newStock = currentStock + quantityChange;
-
-        // Create transaction
-        const transactionRef = push(
-          ref(database, `quotations/inventoryTransactions/${productId}`)
-        );
-        const transactionData = {
-          productId: productId,
-          productName: productName,
-          quantityChange: quantityChange,
-          unit: unit,
-          source: "manual",
-          note: note,
-          performedBy: performedBy,
-          createdAt: Date.now(),
-        };
-
-        await set(transactionRef, transactionData);
-        await update(productRef, {
-          stock: newStock,
-          updatedAt: Date.now(),
-        });
-        
-      } catch (err: any) {
-        console.error("Transaction error:", err);
-        throw new Error("Failed to update stock");
-      }
+      const txRef = push(
+        ref(database, `quotations/inventoryTransactions/${product.id}`)
+      );
+      await set(txRef, {
+        productId: product.productId,
+        productName: product.productName,
+        quantityChange,
+        unit: product.unit,
+        source: "manual",
+        note,
+        performedBy,
+        createdAt: Date.now(),
+      });
+      await update(productRef, { stock: newStock, updatedAt: Date.now() });
     },
     []
   );
 
-  const getProductHistory = useCallback(async (productId: string): Promise<Transaction[]> => {
-    try {
-      const transactionsRef = ref(
-        database,
-        `quotations/inventoryTransactions/${productId}`
+  const getProductHistory = useCallback(
+    async (productId: string): Promise<Transaction[]> => {
+      const snap = await get(
+        ref(database, `quotations/inventoryTransactions/${productId}`)
       );
-      const snapshot = await get(transactionsRef);
+      if (!snap.exists()) return [];
+      const out: Transaction[] = [];
+      snap.forEach((c: any) => {
+        out.push({ id: c.key!, ...c.val() });
+      });
+      return out.sort((a, b) => b.createdAt - a.createdAt);
+    },
+    []
+  );
 
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        const transactionsList = Object.entries(data)
-          .map(([key, value]: any) => ({
-            id: key,
-            ...value,
-          }))
-          .sort((a: Transaction, b: Transaction) => b.createdAt - a.createdAt);
-        return transactionsList;
-      } else {
-        return [];
-      }
-    } catch (err: any) {
-      console.error("Error loading transactions:", err);
-      throw new Error("Failed to load history");
-    }
-  }, []);
-  const searchProducts = useCallback((searchTerm: string): Product[] => {
-    if (!searchTerm.trim()) return products;
-    
-    const term = searchTerm.toLowerCase();
-    return products.filter((product) =>
-      product.productName.toLowerCase().includes(term) ||
-      product.productId.toLowerCase().includes(term)
-    );
-  }, [products]);
-
-
-  const refreshData = useCallback(async (): Promise<void> => {
-    try {
-      setLoading(true);
-      
-      // Invalidate cache
-      memoryCache.products = null;
-      memoryCache.groups = null;
-      
-      const productsRef = ref(database, "quotations/manualInventory");
-      const groupsRef = ref(database, "quotations/inventoryGrp");
-      
-      const [productsSnapshot, groupsSnapshot] = await Promise.all([
-        get(productsRef),
-        get(groupsRef)
-      ]);
-
-      if (productsSnapshot.exists()) {
-        const data = productsSnapshot.val();
-        const productsList = Object.entries(data).map(([key, value]: any) => ({
-          id: key,
-          ...value,
-        }));
-        setProducts(productsList);
-        memoryCache.products = productsList;
-      }
-
-      if (groupsSnapshot.exists()) {
-        const groupsData = groupsSnapshot.val();
-        const groupsList = Object.entries(groupsData)
-          .map(([key, value]: any) => ({
-            id: key,
-            ...value,
-          }))
-          .filter((group: InventoryGroup) =>
-            group.items.some((item) => item.inventoryType === "manual")
-          )
-          .map((group: InventoryGroup) => ({
-            ...group,
-            items: group.items.filter(
-              (item) => item.inventoryType === "manual"
-            ),
-          }));
-
-        setInventoryGroups(groupsList);
-        memoryCache.groups = groupsList;
-      }
-    } catch (err: any) {
-      console.error("Error refreshing data:", err);
-      setError("Failed to refresh data");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const refreshData = useCallback(async () => {}, []);
 
   return {
     products,
@@ -507,17 +269,5 @@ export const useInventoryData = (enableChunkedLoading = true): UseInventoryDataR
 };
 
 export const cleanupInventoryListeners = () => {
-  console.log('Cleaning up inventory listeners...');
-  unsubscribeCallbacks.forEach(unsubscribe => {
-    try {
-      unsubscribe();
-    } catch (err) {
-      console.warn('Error unsubscribing:', err);
-    }
-  });
-  unsubscribeCallbacks = [];
-  isListening = false;
-  memoryCache.products = null;
-  memoryCache.groups = null;
-  memoryCache.displayLimit = CHUNK_SIZE;
+  /* realtime handles itself */
 };

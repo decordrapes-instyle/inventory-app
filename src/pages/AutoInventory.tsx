@@ -1,1468 +1,1082 @@
-import React, { useState, useEffect, useRef } from "react";
-import { useNavigation } from "../context/NavigationContext";
+// src/pages/AutoInventory.tsx
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { useNavigation, useBackHandler } from "../context/NavigationContext";
 import { useAuth } from "../context/AuthContext";
-import { loadFirebase } from "../config/firebaseLoader";
-const { ref, push, set, get, update, onValue, off } = await loadFirebase();
-import { database } from "../config/firebase";
+import { useAutoInventory, Product, Transaction } from "../hooks/useAutoInventory";
 import {
-  Search,
-  Package,
-  History,
-  ArrowLeft,
-  TrendingUp,
-  TrendingDown,
-  Layers,
-  Plus,
-  Minus,
-  Filter,
-  X,
-  Check,
-  Clock,
-  User,
-  IndianRupee as DollarSign,
-  Calculator,
+  Search, Package, History, ArrowLeft,
+  TrendingUp, TrendingDown, Layers,
+  Plus, Minus, Filter, X, Check, Clock, User,
+  IndianRupee as DollarSign, Calculator, Loader2, ChevronDown,
 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 
+const safeArray = <T,>(v: unknown): T[] => (Array.isArray(v) ? v : []);
+const SAFE_TOP = "env(safe-area-inset-top, 0px)";
+const TOPBAR_H = 56;
+const CHIPS_H = 40;
 
-type InventoryUnit =
-  | "piece"
-  | "meter"
-  | "foot"
-  | "length"
-  | "box"
-  | "sqft"
-  | "pcs"
-  | "kgs"
-  | "pkt"
-  | "roll"
-  | "set"
-  | "carton"
-  | "bundle"
-  | "dozen"
-  | "kg"
-  | "inch"
-  | "cm"
-  | "mm";
+type StockFilter = "all" | "low" | "available" | "out";
 
-interface Product {
-  id: string;
-  productId: string;
-  productName: string;
-  stock: number;
-  unit: InventoryUnit;
-  notes?: string;
-  cost?: number | null;
-  createdAt: number;
-  updatedAt: number;
-  category?: string;
-  stockValue?: number; // Added for calculated stock value
-}
+const isLow = (p: Product) => p.stock > 0 && p.stock <= 10;
+const isAvailable = (p: Product) => p.stock > 10;
+const isOut = (p: Product) => p.stock === 0;
 
-interface Transaction {
-  id: string;
-  productId: string;
-  productName: string;
-  quantityChange: number;
-  unit: InventoryUnit;
-  source: "quotation" | "manual" | "purchase";
-  quotationId?: string;
-  purchaseId?: string;
-  note?: string;
-  createdAt: number;
-  performedBy?: string;
-}
+const matchesStock = (p: Product, f: StockFilter) => {
+  switch (f) {
+    case "low": return isLow(p);
+    case "available": return isAvailable(p);
+    case "out": return isOut(p);
+    case "all": default: return true;
+  }
+};
 
-interface InventoryGroup {
-  imageUrl?: string;
-  id: string;
-  name: string;
-  description?: string;
-  items: Array<{
-    productId: string;
-    productName: string;
-    unit: InventoryUnit;
-    addedAt: number;
-    inventoryType: "product" | "manual";
-  }>;
-  createdAt: number;
-  updatedAt: number;
-}
+const stockTone = (n: number) => {
+  if (n === 0) return {
+    text: "text-red-600 dark:text-red-400",
+    pill: "bg-red-500 text-white",
+    chip: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+    label: "Out",
+  };
+  if (n <= 10) return {
+    text: "text-orange-600 dark:text-orange-400",
+    pill: "bg-orange-500 text-white",
+    chip: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+    label: "Low",
+  };
+  return {
+    text: "text-emerald-600 dark:text-emerald-400",
+    pill: "bg-emerald-500 text-white",
+    chip: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+    label: "OK",
+  };
+};
+
+/* ============================================================
+   Sheet
+   ============================================================ */
+const Sheet: React.FC<{
+  open: boolean;
+  onClose: () => void;
+  title?: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}> = ({ open, onClose, title, subtitle, children }) => {
+  const [dragY, setDragY] = useState(0);
+  const dragging = useRef(false);
+  const startY = useRef(0);
+  const startT = useRef(0);
+
+  useEffect(() => {
+    if (!open) { setDragY(0); dragging.current = false; }
+  }, [open]);
+
+  const begin = (y: number) => {
+    dragging.current = true;
+    startY.current = y;
+    startT.current = performance.now();
+  };
+  const move = (y: number) => {
+    if (!dragging.current) return;
+    const d = y - startY.current;
+    if (d > 0) setDragY(d);
+  };
+  const end = (y: number) => {
+    if (!dragging.current) return;
+    const d = y - startY.current;
+    const v = d / Math.max(1, performance.now() - startT.current);
+    dragging.current = false;
+    if (d > 120 || v > 0.5) onClose();
+    else setDragY(0);
+  };
+
+  if (!open) return null;
+  const backdropOpacity = Math.max(0.25, 1 - dragY / 500);
+
+  return (
+    <div className="fixed inset-0 z-50">
+      <div
+        className="absolute inset-0 bg-black"
+        style={{ opacity: backdropOpacity * 0.6, transition: "opacity 150ms" }}
+        onClick={onClose}
+      />
+      <div
+        className="absolute bottom-0 left-0 right-0 bg-white dark:bg-neutral-950 rounded-t-[28px] overflow-hidden shadow-2xl"
+        style={{
+          maxHeight: "92vh",
+          transform: `translateY(${dragY}px)`,
+          transition: dragging.current
+            ? "none"
+            : "transform 300ms cubic-bezier(0.32, 0.72, 0, 1)",
+          touchAction: "none",
+          willChange: "transform",
+        }}
+      >
+        <div
+          className="flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing"
+          style={{ touchAction: "none" }}
+          onTouchStart={(e) => begin(e.touches[0].clientY)}
+          onTouchMove={(e) => move(e.touches[0].clientY)}
+          onTouchEnd={(e) => end(e.changedTouches[0].clientY)}
+          onMouseDown={(e) => {
+            begin(e.clientY);
+            const mv = (ev: MouseEvent) => move(ev.clientY);
+            const up = (ev: MouseEvent) => {
+              end(ev.clientY);
+              document.removeEventListener("mousemove", mv);
+              document.removeEventListener("mouseup", up);
+            };
+            document.addEventListener("mousemove", mv);
+            document.addEventListener("mouseup", up);
+          }}
+        >
+          <div className="w-10 h-1.5 bg-black/25 dark:bg-white/25 rounded-full" />
+        </div>
+
+        {(title || subtitle) && (
+          <div className="px-5 pb-3 flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              {title && (
+                <h2 className="text-lg font-bold text-neutral-900 dark:text-white truncate">
+                  {title}
+                </h2>
+              )}
+              {subtitle && (
+                <p className="text-sm text-neutral-500 dark:text-neutral-400 truncate">
+                  {subtitle}
+                </p>
+              )}
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 -mr-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
+            >
+              <X className="w-5 h-5 text-neutral-500" />
+            </button>
+          </div>
+        )}
+
+        <div
+          className="overflow-y-auto overscroll-contain"
+          style={{ maxHeight: "calc(92vh - 80px)" }}
+        >
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const AutoInventoryPage: React.FC = () => {
   const { goBack } = useNavigation();
   const { user } = useAuth();
-  const [products, setProducts] = useState<Product[]>([]);
+
+  const hook = useAutoInventory(true);
+  const products         = safeArray<Product>(hook?.products);
+  const displayProducts  = safeArray<Product>(hook?.displayProducts);
+  const inventoryGroups  = safeArray<any>(hook?.inventoryGroups);
+  const productsCostMap  = hook?.productsCostMap ?? {};
+  const loading          = !!hook?.loading;
+  const hasMore          = !!hook?.hasMore;
+  const loadMore         = hook?.loadMore ?? (() => {});
+  const adjustStockFn    = hook?.adjustStock;
+  const getHistoryFn     = hook?.getProductHistory;
+  const getGroupProducts = hook?.getGroupProducts ?? (() => [] as Product[]);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showAdjustModal, setShowAdjustModal] = useState(false);
-  const [productTransactions, setProductTransactions] = useState<Transaction[]>(
-    []
-  );
-  const [loading, setLoading] = useState(true);
+  const [productTransactions, setProductTransactions] = useState<Transaction[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [adjustQuantity, setAdjustQuantity] = useState("");
   const [adjustNote, setAdjustNote] = useState("");
   const [adjustType, setAdjustType] = useState<"add" | "reduce">("add");
-  const [stockFilter, setStockFilter] = useState<"all" | "low" | "out">("all");
-  const [inventoryGroups, setInventoryGroups] = useState<InventoryGroup[]>([]);
+  const [stockFilter, setStockFilter] = useState<StockFilter>("all");
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
-  const [productsCostMap, setProductsCostMap] = useState<Record<string, number>>({});
+
+  const [showSearchInput, setShowSearchInput] = useState(false);
+  const [showGroupSheet, setShowGroupSheet] = useState(false);
+  const [showStockSheet, setShowStockSheet] = useState(false);
+  const [showHeader, setShowHeader] = useState(true);
+  const [chunkLoading, setChunkLoading] = useState(false);
+
+  const headerRef = useRef<HTMLElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const adjustInputRef = useRef<HTMLInputElement>(null);
-  const headerRef = useRef<HTMLDivElement>(null);
-  const groupFilterRef = useRef<HTMLDivElement>(null);
-  const stockFilterRef = useRef<HTMLDivElement>(null);
-  const [headerHeight, setHeaderHeight] = useState(72);
-  const [showHeader, setShowHeader] = useState(true);
-  const [showSearchInput, setShowSearchInput] = useState(false);
-  const [showGroupFilter, setShowGroupFilter] = useState(false);
-  const [showStockFilter, setShowStockFilter] = useState(false);
   const lastScrollY = useRef(0);
 
-  // Add this custom hook at the top of your component (before the InventoryPage function)
-  const useSafeAreaHeight = () => {
-    const [safeAreaHeight, setSafeAreaHeight] = useState(0);
+  const hasActiveFilters =
+    !!searchTerm || !!selectedGroup || stockFilter !== "all";
 
-    useEffect(() => {
-      const calculateSafeArea = () => {
-        // Create a test element to measure safe area
-        const testEl = document.createElement("div");
-        testEl.style.position = "fixed";
-        testEl.style.top = "0";
-        testEl.style.left = "0";
-        testEl.style.width = "0";
-        testEl.style.height = "0";
-        testEl.style.paddingTop = "env(safe-area-inset-top)";
-        testEl.style.visibility = "hidden";
-        document.body.appendChild(testEl);
-
-        const computedStyle = window.getComputedStyle(testEl);
-        const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
-
-        document.body.removeChild(testEl);
-        return paddingTop;
-      };
-
-      // Calculate after mount
-      const timer = setTimeout(() => {
-        const height = calculateSafeArea();
-        setSafeAreaHeight(height);
-      }, 100);
-
-      return () => clearTimeout(timer);
-    }, []);
-
-    return safeAreaHeight;
-  };
-
-  // Then in your InventoryPage component, add:
-  const safeAreaHeight = useSafeAreaHeight();
-
-  useEffect(() => {
-    const updateHeaderHeight = () => {
-      if (headerRef.current) {
-        const height = headerRef.current.getBoundingClientRect().height;
-        setHeaderHeight(height + 8);
-      }
-    };
-
-    updateHeaderHeight();
-
-    const observer = new ResizeObserver(updateHeaderHeight);
-    if (headerRef.current) {
-      observer.observe(headerRef.current);
-    }
-
-    return () => observer.disconnect();
-  }, [
-    showSearchInput,
-    showGroupFilter,
-    showStockFilter,
-    stockFilter,
-    searchTerm,
-    selectedGroup,
-  ]);
-  // Measure header height
-
-  // Handle scroll to hide/show header
-  useEffect(() => {
-    const handleScroll = () => {
-      const currentScrollY = window.scrollY;
-
-      // Don't hide header if any filter is expanded
-      const isFilterExpanded =
-        showGroupFilter || showStockFilter || showSearchInput;
-      if (isFilterExpanded) {
-        setShowHeader(true);
-        return;
-      }
-
-      if (currentScrollY < lastScrollY.current) {
-        setShowHeader(true);
-      } else if (currentScrollY > lastScrollY.current + 10) {
-        setShowHeader(false);
-      }
-
-      lastScrollY.current = currentScrollY;
-    };
-
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, [showGroupFilter, showStockFilter, showSearchInput]);
-
-  // Fetch products, groups, and costs
-  useEffect(() => {
-    setLoading(true);
-    setShowSearchInput(true);
+  /* ---------- hardware / browser back ---------- */
+  useBackHandler(showHistoryModal, () => {
+    setShowHistoryModal(false);
+    setSelectedProduct(null);
+    setProductTransactions([]);
+  });
+  useBackHandler(showAdjustModal, () => {
+    setShowAdjustModal(false);
+    setSelectedProduct(null);
+    setAdjustQuantity("");
+    setAdjustNote("");
+  });
+  useBackHandler(showGroupSheet, () => setShowGroupSheet(false));
+  useBackHandler(showStockSheet, () => setShowStockSheet(false));
+  useBackHandler(showSearchInput, () => {
     setShowSearchInput(false);
+    setSearchTerm("");
+  });
 
-    const productsRef = ref(database, "quotations/inventory");
-    const groupsRef = ref(database, "quotations/inventoryGrp");
-    const productsCostRef = ref(database, "quotations/products");
-
-    // Fetch products
-    const productsListener = onValue(
-      productsRef,
-      (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.val();
-          const productList: Product[] = Object.entries(data)
-            .map(([key, value]: any) => ({
-              id: key,
-              productId: value.productId || "",
-              productName: value.productName || "Unnamed Product",
-              stock: value.stock || 0,
-              unit: value.unit || "pcs",
-              notes: value.notes,
-              category: value.category,
-              cost: value.cost,
-              createdAt: value.createdAt || 0,
-              updatedAt: value.updatedAt || 0,
-            }))
-            .sort((a, b) => b.updatedAt - a.updatedAt);
-          setProducts(productList);
-        } else {
-          setProducts([]);
-        }
-      },
-      (error) => {
-        console.error("Firebase error:", error);
-        toast.error("Failed to load products");
-      }
-    );
-
-    // Fetch product costs from quotations/products
-    const productsCostListener = onValue(
-      productsCostRef,
-      (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.val();
-          const costMap: Record<string, number> = {};
-          Object.entries(data).forEach(([productId, productData]: [string, any]) => {
-            if (productData && typeof productData.cost === 'number') {
-              costMap[productId] = productData.cost;
-            }
-          });
-          setProductsCostMap(costMap);
-        } else {
-          setProductsCostMap({});
-        }
-      },
-      (error) => {
-        console.error("Firebase cost error:", error);
-        setProductsCostMap({});
-      }
-    );
-
-    // Fetch groups - Filter only groups with inventoryType "product"
-    const groupsListener = onValue(
-      groupsRef,
-      (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.val();
-          const groupsList: InventoryGroup[] = Object.entries(data).map(
-            ([key, value]: any) => ({
-              id: key,
-              ...value,
-            })
-          );
-
-          const filteredGroups = groupsList.filter((group) => {
-            if (!group.items || !Array.isArray(group.items)) return false;
-
-            return group.items.some((item) => item.inventoryType === "product");
-          });
-
-          setInventoryGroups(filteredGroups);
-        } else {
-          setInventoryGroups([]);
-        }
-        setLoading(false);
-      },
-      (error) => {
-        console.error("Firebase groups error:", error);
-        setInventoryGroups([]);
-        setLoading(false);
-      }
-    );
-
-    return () => {
-      off(productsRef, "value", productsListener);
-      off(groupsRef, "value", groupsListener);
-      off(productsCostRef, "value", productsCostListener);
+  /* ---------- scroll hide/show ---------- */
+  useEffect(() => {
+    const onScroll = () => {
+      const y = window.scrollY;
+      if (showSearchInput) { setShowHeader(true); return; }
+      if (y < lastScrollY.current) setShowHeader(true);
+      else if (y > lastScrollY.current + 12) setShowHeader(false);
+      lastScrollY.current = y;
     };
-  }, []);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [showSearchInput]);
 
-  // Calculate stock value for products when costs are loaded
+  /* ---------- focus search ---------- */
   useEffect(() => {
-    if (Object.keys(productsCostMap).length > 0) {
-      setProducts(prevProducts => 
-        prevProducts.map(product => ({
-          ...product,
-          cost: productsCostMap[product.productId] || product.cost || null,
-          stockValue: (productsCostMap[product.productId] || product.cost || 0) * product.stock
-        }))
-      );
+    if (showSearchInput) {
+      const t = setTimeout(() => searchInputRef.current?.focus(), 40);
+      return () => clearTimeout(t);
     }
-  }, [productsCostMap]);
+  }, [showSearchInput]);
 
-  // Keep focus for adjust modal when it opens
+  /* ---------- tap outside search ---------- */
   useEffect(() => {
-    if (showAdjustModal) {
-      setTimeout(() => {
-        adjustInputRef.current?.focus();
-      }, 100);
-    }
+    if (!showSearchInput) return;
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      const hdr = headerRef.current;
+      if (!hdr) return;
+      if (!hdr.contains(e.target as Node)) {
+        setShowSearchInput(false);
+        setSearchTerm("");
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("touchstart", onDown, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("touchstart", onDown);
+    };
+  }, [showSearchInput]);
+
+  /* ---------- ESC ---------- */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (showHistoryModal) {
+        setShowHistoryModal(false);
+        setSelectedProduct(null);
+        setProductTransactions([]);
+      } else if (showAdjustModal) {
+        setShowAdjustModal(false);
+        setSelectedProduct(null);
+        setAdjustQuantity("");
+        setAdjustNote("");
+      } else if (showGroupSheet) setShowGroupSheet(false);
+      else if (showStockSheet) setShowStockSheet(false);
+      else if (showSearchInput) {
+        setShowSearchInput(false);
+        setSearchTerm("");
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [
+    showHistoryModal, showAdjustModal,
+    showGroupSheet, showStockSheet, showSearchInput,
+  ]);
+
+  /* ---------- focus adjust input ---------- */
+  useEffect(() => {
+    if (showAdjustModal) setTimeout(() => adjustInputRef.current?.focus(), 120);
   }, [showAdjustModal]);
 
+  /* ---------- body scroll lock ---------- */
   useEffect(() => {
-    if (
-      showHistoryModal ||
-      showAdjustModal ||
-      showGroupFilter ||
-      showStockFilter
-    ) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "auto";
+    const lock =
+      showHistoryModal || showAdjustModal || showGroupSheet || showStockSheet;
+    document.body.style.overflow = lock ? "hidden" : "auto";
+    return () => { document.body.style.overflow = "auto"; };
+  }, [showHistoryModal, showAdjustModal, showGroupSheet, showStockSheet]);
+
+  /* ---------- filtering ---------- */
+  const filteredProducts = useMemo<Product[]>(() => {
+    let base: Product[] = selectedGroup
+      ? safeArray<Product>(getGroupProducts(selectedGroup))
+      : displayProducts;
+    base = base.filter((p) => matchesStock(p, stockFilter));
+    if (searchTerm) {
+      const t = searchTerm.toLowerCase();
+      base = base.filter(
+        (p) =>
+          p.productName.toLowerCase().includes(t) ||
+          p.productId.toLowerCase().includes(t)
+      );
     }
-    return () => {
-      document.body.style.overflow = "auto";
-    };
-  }, [showHistoryModal, showAdjustModal, showGroupFilter, showStockFilter]);
+    return base;
+  }, [displayProducts, selectedGroup, stockFilter, searchTerm, getGroupProducts]);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        groupFilterRef.current &&
-        !groupFilterRef.current.contains(event.target as Node)
-      ) {
-        setShowGroupFilter(false);
-      }
-      if (
-        stockFilterRef.current &&
-        !stockFilterRef.current.contains(event.target as Node)
-      ) {
-        setShowStockFilter(false);
-      }
-    };
+  const countAll = products.length;
+  const countLow = products.filter(isLow).length;
+  const countAvailable = products.filter(isAvailable).length;
+  const countOut = products.filter(isOut).length;
 
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, []);
-
-  const toggleSearch = () => {
-    setShowSearchInput(!showSearchInput);
-    setShowGroupFilter(false);
-    setShowStockFilter(false);
-    if (!showSearchInput && searchTerm) {
-      setSearchTerm("");
+  const stockFilterLabel = (f: StockFilter) => {
+    switch (f) {
+      case "low": return "Low";
+      case "available": return "Available";
+      case "out": return "Out";
+      case "all": default: return "All";
     }
   };
 
-  const handleAdjustStock = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedProduct || !adjustQuantity) {
-      toast.error("Please enter a quantity");
-      return;
-    }
-
-    try {
-      let quantityChange = parseFloat(adjustQuantity);
-
-      if (isNaN(quantityChange) || quantityChange <= 0) {
-        toast.error("Please enter a valid positive quantity");
-        return;
-      }
-
-      if (adjustType === "reduce") {
-        quantityChange = -quantityChange;
-      }
-
-      const productRef = ref(
-        database,
-        `quotations/inventory/${selectedProduct.id}`
-      );
-      const snapshot = await get(productRef);
-      const currentProduct = snapshot.val();
-
-      if (!currentProduct) {
-        toast.error("Product not found");
-        return;
-      }
-
-      const currentStock = currentProduct.stock || 0;
-      const newStock = currentStock + quantityChange;
-
-      if (newStock < 0) {
-        toast.error("Stock cannot be negative");
-        return;
-      }
-
-      const userInfo = user
-        ? user.displayName || user.email || user.uid
-        : "Unknown User";
-      const finalNote = adjustNote
-        ? `${adjustNote} (By: ${userInfo})`
-        : `${quantityChange > 0 ? "Added" : "Removed"} stock (By: ${userInfo})`;
-
-      const transactionRef = push(
-        ref(database, `quotations/inventoryTransactions/${selectedProduct.id}`)
-      );
-      const transactionData = {
-        productId: selectedProduct.productId,
-        productName: selectedProduct.productName,
-        quantityChange: quantityChange,
-        unit: selectedProduct.unit,
-        source: "manual",
-        note: finalNote,
-        performedBy: userInfo,
-        createdAt: Date.now(),
-      };
-
-      await set(transactionRef, transactionData);
-      await update(productRef, {
-        stock: newStock,
-        updatedAt: Date.now(),
-      });
-
-      toast.success(
-        `Stock ${quantityChange > 0 ? "added" : "removed"} successfully`
-      );
-
-      setShowAdjustModal(false);
-      setAdjustQuantity("");
-      setAdjustNote("");
-      setSelectedProduct(null);
-    } catch (err: any) {
-      console.error("Transaction error:", err);
-      toast.error(err.message || "Failed to record transaction");
-    }
+  const clearAllFilters = () => {
+    setSearchTerm("");
+    setSelectedGroup(null);
+    setStockFilter("all");
   };
 
-  const handleViewHistory = async (product: Product) => {
-    setSelectedProduct(product);
-    setLoading(true);
-
-    try {
-      const transactionsRef = ref(
-        database,
-        `quotations/inventoryTransactions/${product.id}`
-      );
-      const snapshot = await get(transactionsRef);
-
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        const transactionsList = Object.entries(data)
-          .map(([key, value]: any) => ({
-            id: key,
-            ...value,
-          }))
-          .sort((a: Transaction, b: Transaction) => b.createdAt - a.createdAt);
-        setProductTransactions(transactionsList);
-      } else {
-        setProductTransactions([]);
-      }
-
-      setShowHistoryModal(true);
-    } catch (err: any) {
-      console.error("Error loading transactions:", err);
-      toast.error("Failed to load transaction history");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleQuickAdjust = (product: Product, type: "add" | "reduce") => {
-    setSelectedProduct(product);
+  const openAdjust = (p: Product, type: "add" | "reduce") => {
+    setSelectedProduct(p);
     setAdjustType(type);
     setAdjustQuantity("");
     setAdjustNote("");
     setShowAdjustModal(true);
   };
 
-  const getGroupProducts = (groupId: string): Product[] => {
-    const group = inventoryGroups.find((g) => g.id === groupId);
-    if (!group) return [];
-    const productItems = group.items.filter(
-      (item) => item.inventoryType === "product"
-    );
-    const groupProductIds = new Set(productItems.map((item) => item.productId));
-
-    return products.filter((product) => groupProductIds.has(product.productId));
-  };
-
-  // Filter products based on selected group, stock filter, and search term
-  const getFilteredProducts = () => {
-    let filtered = selectedGroup ? getGroupProducts(selectedGroup) : products;
-
-    // Apply stock filter
-    if (stockFilter === "low") {
-      filtered = filtered.filter((p) => p.stock > 0 && p.stock <= 10);
-    } else if (stockFilter === "out") {
-      filtered = filtered.filter((p) => p.stock === 0);
+  const handleAdjust = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProduct || !adjustQuantity) return toast.error("Enter quantity");
+    if (!adjustStockFn) return toast.error("Adjuster not ready");
+    let q = parseFloat(adjustQuantity);
+    if (isNaN(q) || q <= 0) return toast.error("Enter a valid quantity");
+    if (adjustType === "reduce") {
+      if (q > selectedProduct.stock) return toast.error("Not enough stock");
+      q = -q;
     }
-
-    // Apply search term
-    if (searchTerm) {
-      filtered = filtered.filter(
-        (p) =>
-          p.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          p.productId.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+    const performer = user?.displayName || user?.email || user?.uid || "Unknown";
+    const note = adjustNote
+      ? `${adjustNote} (By: ${performer})`
+      : `${q > 0 ? "Added" : "Removed"} stock (By: ${performer})`;
+    try {
+      await adjustStockFn(selectedProduct, q, note, performer);
+      toast.success(`Stock ${q > 0 ? "added" : "removed"}`);
+      setShowAdjustModal(false);
+      setSelectedProduct(null);
+      setAdjustQuantity("");
+      setAdjustNote("");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to update");
     }
-
-    return filtered;
   };
 
-  const filteredProducts = getFilteredProducts();
-
-  const getStockStatusColor = (stock: number) => {
-    if (stock === 0)
-      return "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300";
-    if (stock <= 10)
-      return "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300";
-    return "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300";
+  const openHistory = async (p: Product) => {
+    if (!getHistoryFn) return;
+    setSelectedProduct(p);
+    setHistoryLoading(true);
+    setShowHistoryModal(true);
+    try {
+      const txs = await getHistoryFn(p.id);
+      setProductTransactions(safeArray<Transaction>(txs));
+    } catch {
+      toast.error("Failed to load history");
+    } finally {
+      setHistoryLoading(false);
+    }
   };
 
-  const getStockStatusText = (stock: number) => {
-    if (stock === 0) return "Out of Stock";
-    if (stock <= 10) return "Low Stock";
-    return "In Stock";
+  const loadMoreClick = () => {
+    setChunkLoading(true);
+    loadMore();
+    setTimeout(() => setChunkLoading(false), 350);
   };
 
-  const getStockColor = (stock: number) => {
-    if (stock === 0) return "text-red-600 dark:text-red-400";
-    if (stock <= 10) return "text-orange-600 dark:text-orange-400";
-    return "text-green-600 dark:text-green-400";
-  };
-
-  // Skeleton Loading
-  const ProductSkeleton = () => (
-    <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden animate-pulse p-4">
-      <div className="flex justify-between">
-        <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-          <div className="h-4 bg-gray-200 dark:bg-gray-800 rounded w-3/4"></div>
-          <div className="h-3 bg-gray-200 dark:bg-gray-800 rounded w-1/2"></div>
-        </div>
-        <div className="h-8 bg-gray-200 dark:bg-gray-800 rounded w-16"></div>
-      </div>
-      <div className="h-8 bg-gray-200 dark:bg-gray-800 rounded mt-3"></div>
-    </div>
-  );
-
-  if (loading && products.length === 0) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-black p-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-3">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <ProductSkeleton key={index} />
-          ))}
-        </div>
-      </div>
-    );
-  }
+  const spacerHeight = `calc(${TOPBAR_H}px${
+    hasActiveFilters ? ` + ${CHIPS_H}px` : ""
+  } + ${SAFE_TOP})`;
 
   return (
     <>
       <Toaster
         position="top-center"
         toastOptions={{
-          className:
-            "dark:bg-gray-900 dark:text-white border border-gray-200 dark:border-gray-800",
-          duration: 3000,
+          className: "dark:bg-neutral-900 dark:text-white",
+          duration: 2500,
         }}
       />
 
-      <div className="min-h-screen bg-gray-50 dark:bg-black text-gray-900 dark:text-white pb-16">
-        {/* HEADER */}
-        <div
-          ref={headerRef}
-          className={`
-            fixed top-0 left-0 right-0 z-20 pt-safe
-            bg-white/90 dark:bg-black/90 backdrop-blur-sm
-            border-b border-gray-200 dark:border-gray-900
-            transition-transform duration-300 ease-in-out
-            ${showHeader ? "translate-y-0" : "-translate-y-full"}
-          `}
+      <div className="min-h-screen bg-gray-50 dark:bg-black text-gray-900 dark:text-white pb-20">
+        <header
+          ref={headerRef as any}
+          style={{ paddingTop: SAFE_TOP }}
+          className={`fixed top-0 left-0 right-0 z-30
+            bg-white/85 dark:bg-black/85 backdrop-blur-xl
+            shadow-[0_1px_0_0_rgba(0,0,0,0.04),0_10px_28px_-14px_rgba(0,0,0,0.10)]
+            dark:shadow-[0_1px_0_0_rgba(255,255,255,0.04),0_10px_28px_-14px_rgba(0,0,0,0.8)]
+            transition-transform duration-300
+            will-change-transform
+            ${showHeader ? "translate-y-0" : "-translate-y-full"}`}
         >
-          {/* TOP BAR */}
-          <div className="flex items-center justify-between h-14 px-4">
-            <div className="flex items-center gap-3">
-              <button onClick={goBack} className="p-2 rounded-lg">
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-              <h1 className="text-lg font-bold truncate">Fabric Inventory</h1>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {/* SEARCH ICON */}
-              <button
-                onClick={toggleSearch}
-                className={`p-2 rounded-lg transition-colors ${
-                  searchTerm || showSearchInput ? "bg-blue-500 text-white" : ""
-                }`}
-              >
-                <Search className="w-5 h-5" />
-              </button>
-
-              {/* GROUP ICON - Only show if we have product groups */}
-              {inventoryGroups.length > 0 && (
+          <div className="flex items-center px-3 gap-1.5" style={{ height: TOPBAR_H }}>
+            {showSearchInput ? (
+              <>
                 <button
-                  onClick={() => {
-                    setShowGroupFilter(!showGroupFilter);
-                    setShowStockFilter(false);
-                    setShowSearchInput(false);
-                  }}
-                  className={`p-2 rounded-lg transition-colors ${
-                    selectedGroup || showGroupFilter
-                      ? "bg-purple-500 text-white"
-                      : ""
-                  }`}
+                  onClick={() => { setShowSearchInput(false); setSearchTerm(""); }}
+                  className="p-2 -ml-1 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                  aria-label="Close search"
                 >
-                  <Layers className="w-5 h-5" />
+                  <ArrowLeft className="w-5 h-5" />
                 </button>
-              )}
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    ref={searchInputRef}
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Search fabrics…"
+                    className="w-full h-10 pl-9 pr-9 rounded-full bg-gray-100 dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 border-0"
+                  />
+                  {searchTerm && (
+                    <button
+                      onClick={() => setSearchTerm("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full"
+                      aria-label="Clear"
+                    >
+                      <X className="w-3.5 h-3.5 text-gray-500" />
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={goBack}
+                  className="p-2 -ml-1 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                  aria-label="Back"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+                <h1 className="text-base font-bold truncate flex-1 ml-1">
+                  Fabric Inventory
+                </h1>
 
-              {/* STOCK ICON */}
-              <button
-                onClick={() => {
-                  setShowStockFilter(!showStockFilter);
-                  setShowGroupFilter(false);
-                  setShowSearchInput(false);
-                }}
-                className={`p-2 rounded-lg transition-colors ${
-                  stockFilter !== "all" || showStockFilter
-                    ? "bg-orange-500 text-white"
-                    : ""
-                }`}
-              >
-                <Filter className="w-5 h-5" />
-              </button>
-            </div>
+                <button
+                  onClick={() => setShowSearchInput(true)}
+                  className="p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                  aria-label="Search"
+                >
+                  <Search className="w-5 h-5" />
+                </button>
+
+                {inventoryGroups.length > 0 && (
+                  <button
+                    onClick={() => setShowGroupSheet(true)}
+                    className={`relative p-2 rounded-full ${
+                      selectedGroup
+                        ? "bg-purple-500 text-white"
+                        : "hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                    }`}
+                    aria-label="Groups"
+                  >
+                    <Layers className="w-5 h-5" />
+                  </button>
+                )}
+
+                <button
+                  onClick={() => setShowStockSheet(true)}
+                  className={`relative p-2 rounded-full ${
+                    stockFilter !== "all"
+                      ? "bg-orange-500 text-white"
+                      : "hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                  }`}
+                  aria-label="Stock filter"
+                >
+                  <Filter className="w-5 h-5" />
+                </button>
+              </>
+            )}
           </div>
 
-          {/* SEARCH INPUT ROW */}
-          {showSearchInput && (
-            <div className="px-4 pb-3">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  ref={searchInputRef}
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search fabrics by name or code..."
-                  className="w-full pl-10 pr-10 py-3 rounded-xl bg-gray-100 dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 border-0"
-                />
+          {hasActiveFilters && (
+            <div style={{ height: CHIPS_H }}>
+              <div className="h-full flex items-center gap-1.5 px-3 overflow-x-auto scrollbar-hide">
                 {searchTerm && (
                   <button
                     onClick={() => setSearchTerm("")}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full bg-gray-200 dark:bg-gray-800"
+                    className="shrink-0 flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full
+                      bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-xs font-medium"
                   >
-                    <X className="w-4 h-4 text-gray-500" />
+                    <Search className="w-3 h-3" />
+                    <span className="max-w-[140px] truncate">{searchTerm}</span>
+                    <X className="w-3 h-3 opacity-60" />
                   </button>
                 )}
-              </div>
-            </div>
-          )}
-
-          {/* GROUP FILTER ROW - Android style */}
-          {showGroupFilter && inventoryGroups.length > 0 && (
-            <div
-              ref={groupFilterRef}
-              className="bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800"
-            >
-              <div className="flex gap-5 px-4 py-3 overflow-x-auto scrollbar-hide">
-                {/* ALL GROUPS */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedGroup(null);
-                    setShowGroupFilter(false);
-                  }}
-                  className="shrink-0 flex flex-col items-center min-w-[76px] transition-transform active:scale-[0.96]"
-                >
-                  <div
-                    className={`w-14 h-14 rounded-full flex items-center justify-center mb-1
-            ${
-              !selectedGroup
-                ? "bg-purple-600 shadow-sm"
-                : "bg-gray-200 dark:bg-gray-800"
-            }`}
-                  >
-                    <span
-                      className={`text-sm font-bold ${
-                        !selectedGroup ? "text-white" : "text-gray-600"
-                      }`}
-                    >
-                      ALL
-                    </span>
-                  </div>
-
-                  <span
-                    className={`text-xs text-center leading-tight
-            ${
-              !selectedGroup
-                ? "text-purple-600 font-semibold"
-                : "text-gray-600 dark:text-gray-400"
-            }`}
-                  >
-                    All Groups
-                  </span>
-
-                  {!selectedGroup && (
-                    <div className="h-[3px] w-5 bg-purple-600 rounded-full mt-1" />
-                  )}
-                </button>
-
-                {/* GROUPS */}
-                {inventoryGroups.map((group) => {
-                  const isSelected = selectedGroup === group.id;
-
-                  return (
-                    <button
-                      key={group.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedGroup(group.id);
-                        setShowGroupFilter(false);
-                      }}
-                      className="shrink-0 flex flex-col items-center min-w-[76px] transition-transform active:scale-[0.96]"
-                    >
-                      <div
-                        className={`w-14 h-14 rounded-full overflow-hidden mb-1
-                ${
-                  isSelected
-                    ? "bg-white shadow-sm"
-                    : "bg-gray-200 dark:bg-gray-800"
-                }`}
-                      >
-                        <img
-                          src={
-                            group.imageUrl || "/images/group-placeholder.png"
-                          }
-                          alt={group.name}
-                          onError={(e) => {
-                            e.currentTarget.src =
-                              "/images/group-placeholder.png";
-                          }}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-
-                      <span
-                        className={`text-xs text-center leading-tight max-w-[76px]
-                ${
-                  isSelected
-                    ? "text-purple-600 font-semibold"
-                    : "text-gray-600 dark:text-gray-400"
-                }`}
-                      >
-                        {group.name}
-                      </span>
-
-                      {isSelected && (
-                        <div className="h-[3px] w-5 bg-purple-600 rounded-full mt-1" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* STOCK FILTER ROW - Grid layout */}
-          {showStockFilter && (
-            <div className="px-4 pb-3" ref={stockFilterRef}>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  onClick={() => {
-                    setStockFilter("all");
-                    setShowStockFilter(false);
-                  }}
-                  className={`py-3 px-2 rounded-xl text-center transition-all duration-200 ${
-                    stockFilter === "all"
-                      ? "bg-orange-500 text-white shadow-md"
-                      : "bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-800"
-                  }`}
-                >
-                  <span className="font-medium text-sm">All</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setStockFilter("low");
-                    setShowStockFilter(false);
-                  }}
-                  className={`py-3 px-2 rounded-xl text-center transition-all duration-200 ${
-                    stockFilter === "low"
-                      ? "bg-orange-500 text-white shadow-md"
-                      : "bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-800"
-                  }`}
-                >
-                  <span className="font-medium text-sm">Low Stock</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setStockFilter("out");
-                    setShowStockFilter(false);
-                  }}
-                  className={`py-3 px-2 rounded-xl text-center transition-all duration-200 ${
-                    stockFilter === "out"
-                      ? "bg-orange-500 text-white shadow-md"
-                      : "bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-800"
-                  }`}
-                >
-                  <span className="font-medium text-sm">Out of Stock</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* APPLIED FILTERS ROW */}
-          {(searchTerm || selectedGroup || stockFilter !== "all") && (
-            <div className="px-4 pb-3 border-t border-gray-100 dark:border-gray-800 pt-2">
-              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
-                <span className="text-xs text-gray-500 dark:text-gray-400 font-medium shrink-0">
-                  Filters:
-                </span>
-
-                {/* SEARCH CHIP */}
-                {searchTerm && (
-                  <div className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs shrink-0">
-                    <Search className="w-3.5 h-3.5" />
-                    <span className="max-w-[120px] truncate">
-                      "{searchTerm}"
-                    </span>
-                    <button
-                      onClick={() => setSearchTerm("")}
-                      className="ml-1 p-0.5 rounded-full hover:bg-blue-200 dark:hover:bg-blue-800/50"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                )}
-
-                {/* GROUP CHIP */}
                 {selectedGroup && (
-                  <div className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs shrink-0">
-                    <Layers className="w-3.5 h-3.5" />
-                    <span className="max-w-[120px] truncate">
-                      {
-                        inventoryGroups.find((g) => g.id === selectedGroup)
-                          ?.name
-                      }
+                  <button
+                    onClick={() => setSelectedGroup(null)}
+                    className="shrink-0 flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full
+                      bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-xs font-medium"
+                  >
+                    <Layers className="w-3 h-3" />
+                    <span className="max-w-[140px] truncate">
+                      {inventoryGroups.find((g: any) => g.id === selectedGroup)?.name}
                     </span>
-                    <button
-                      onClick={() => setSelectedGroup(null)}
-                      className="ml-1 p-0.5 rounded-full hover:bg-purple-200 dark:hover:bg-purple-800/50"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
+                    <X className="w-3 h-3 opacity-60" />
+                  </button>
                 )}
-
-                {/* STOCK CHIP */}
                 {stockFilter !== "all" && (
-                  <div
-                    className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs shrink-0 ${
+                  <button
+                    onClick={() => setStockFilter("all")}
+                    className={`shrink-0 flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full text-xs font-medium ${
                       stockFilter === "low"
-                        ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300"
-                        : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                        ? "bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300"
+                        : stockFilter === "available"
+                        ? "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"
+                        : "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300"
                     }`}
                   >
-                    <Filter className="w-3.5 h-3.5" />
-                    <span>
-                      {stockFilter === "low" ? "Low Stock" : "Out of Stock"}
-                    </span>
-                    <button
-                      onClick={() => setStockFilter("all")}
-                      className={`ml-1 p-0.5 rounded-full ${
-                        stockFilter === "low"
-                          ? "hover:bg-orange-200 dark:hover:bg-orange-800/50"
-                          : "hover:bg-red-200 dark:hover:bg-red-800/50"
-                      }`}
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
+                    <Filter className="w-3 h-3" />
+                    <span>{stockFilterLabel(stockFilter)}</span>
+                    <X className="w-3 h-3 opacity-60" />
+                  </button>
                 )}
-
-                {/* CLEAR ALL */}
-                {(searchTerm ? 1 : 0) +
-                  (selectedGroup ? 1 : 0) +
-                  (stockFilter !== "all" ? 1 : 0) >
-                  1 && (
+                {(searchTerm ? 1 : 0) + (selectedGroup ? 1 : 0) + (stockFilter !== "all" ? 1 : 0) > 1 && (
                   <button
-                    onClick={() => {
-                      setSearchTerm("");
-                      setSelectedGroup(null);
-                      setStockFilter("all");
-                    }}
-                    className="ml-auto text-xs text-gray-500 dark:text-gray-400 px-2 py-1.5 shrink-0 hover:text-gray-700 dark:hover:text-gray-300"
+                    onClick={clearAllFilters}
+                    className="shrink-0 text-xs text-neutral-500 dark:text-neutral-400 px-2 py-1 ml-auto"
                   >
-                    Clear all
+                    Clear
                   </button>
                 )}
               </div>
             </div>
           )}
-        </div>
+        </header>
 
-        {/* Main Content */}
-        <div
-          className="p-4 transition-[padding-top] duration-300 ease-in-out"
-          style={{
-            paddingTop: `${Math.max(
-              headerHeight,
-              safeAreaHeight > 0 ? safeAreaHeight + 64 : 72
-            )}px`,
-          }}
-        >
-          {/* Stats Cards - Added Inventory Value */}
+        <div style={{ height: spacerHeight }} />
+
+        <div className="p-4">
           <div className="grid grid-cols-2 gap-3 mb-4">
-            <div className="bg-white dark:bg-neutral-950 rounded-xl p-4 border border-gray-200 dark:border-gray-800 shadow-sm">
+            <div className="rounded-2xl p-4 bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800">
               <div className="flex items-center gap-2 mb-2">
                 <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
                   <Package className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 </div>
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  Total Fabrics
-                </span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">Total Fabrics</span>
               </div>
               <div className="flex items-baseline gap-1">
-                <span className="text-xl font-bold text-gray-900 dark:text-white">
-                  {products.length}
-                </span>
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  items
-                </span>
+                <span className="text-2xl font-bold tabular-nums">{countAll}</span>
+                <span className="text-xs text-gray-500">items</span>
               </div>
             </div>
-
-            <div className="bg-white dark:bg-neutral-950 rounded-xl p-4 border border-gray-200 dark:border-gray-800 shadow-sm">
+            <div className="rounded-2xl p-4 bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800">
               <div className="flex items-center gap-2 mb-2">
                 <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/30">
                   <Package className="w-4 h-4 text-green-600 dark:text-green-400" />
                 </div>
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  In Stock
-                </span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">Available</span>
               </div>
               <div className="flex items-baseline gap-1">
-                <span className="text-xl font-bold text-green-600 dark:text-green-400">
-                  {products.filter((p) => p.stock > 10).length}
+                <span className="text-2xl font-bold text-green-600 dark:text-green-400 tabular-nums">
+                  {countAvailable}
                 </span>
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  items
-                </span>
+                <span className="text-xs text-gray-500">items</span>
               </div>
             </div>
-
           </div>
 
-          {/* Products List - Single Column without Images */}
           {filteredProducts.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="w-20 h-20 bg-gray-100 dark:bg-gray-900 rounded-full flex items-center justify-center mx-auto mb-4">
+            <div className="text-center py-16">
+              <div className="w-20 h-20 bg-gray-100 dark:bg-neutral-900 rounded-2xl flex items-center justify-center mx-auto mb-4">
                 <Package className="w-10 h-10 text-gray-400 dark:text-gray-600" />
               </div>
               <p className="text-gray-600 dark:text-gray-300 font-medium text-base mb-2">
-                {searchTerm ? "No fabrics found" : "No fabrics in inventory"}
-              </p>
-              <p className="text-gray-500 dark:text-gray-500 text-sm mb-4">
                 {searchTerm
-                  ? "Try a different search term"
-                  : "Add fabrics to get started"}
+                  ? "No fabrics found"
+                  : loading
+                  ? "Loading fabrics…"
+                  : hasActiveFilters
+                  ? "No fabrics match these filters"
+                  : "No fabrics in inventory"}
               </p>
-              {searchTerm && (
+              {hasActiveFilters && (
                 <button
-                  onClick={() => setSearchTerm("")}
-                  className="px-5 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors"
+                  onClick={clearAllFilters}
+                  className="px-5 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-medium text-sm mt-2"
                 >
-                  Clear Search
+                  Clear filters
                 </button>
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-3">
-              {filteredProducts.map((product) => {
-                const productCost = productsCostMap[product.productId] || product.cost || 0;
-                const stockValue = productCost * product.stock;
-                
-                return (
-                  <div
-                    key={product.id}
-                    className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200 active:bg-gray-50 dark:active:bg-gray-800"
-                    onClick={() => handleViewHistory(product)}
-                  >
-                    <div className="p-4 p-4 dark:bg-neutral-950  dark:border-neutral-800">
-                      {/* Product Info Row */}
-                      <div className="flex justify-between items-start mb-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="mb-1">
-                            <h3 className="font-semibold text-gray-900 dark:text-white text-base line-clamp-1">
-                              {product.productName}
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-3">
+                {filteredProducts.map((p) => {
+                  const cost = productsCostMap[p.productId] ?? p.cost ?? 0;
+                  const value = cost * p.stock;
+                  const tone = stockTone(p.stock);
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => openHistory(p)}
+                      className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.03)] hover:shadow-[0_6px_20px_rgba(0,0,0,0.06)] transition-shadow cursor-pointer"
+                    >
+                      <div className="p-4">
+                        <div className="flex justify-between items-start mb-3 gap-3">
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-semibold text-gray-900 dark:text-white text-[15px] truncate">
+                              {p.productName}
                             </h3>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                              Code: {product.productId}
+                            <p className="text-[11px] text-gray-500 dark:text-neutral-500 mt-0.5 truncate">
+                              Code: {p.productId}
                             </p>
-                          </div>
-
-                          {/* Category and Stock Status */}
-                          <div className="flex items-center gap-2 mt-2">
-                            {product.category && (
-                              <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded-lg text-xs text-gray-600 dark:text-gray-400">
-                                <Layers className="w-3 h-3" />
-                                {product.category}
+                            <div className="flex items-center gap-2 mt-2 flex-wrap">
+                              {p.category && (
+                                <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 dark:bg-neutral-800 rounded-lg text-[11px] text-gray-600 dark:text-gray-400">
+                                  <Layers className="w-3 h-3" />
+                                  {p.category}
+                                </span>
+                              )}
+                              <span className={`px-2 py-1 rounded-lg text-[10px] font-semibold ${tone.chip}`}>
+                                {tone.label}
                               </span>
-                            )}
-                            <span
-                              className={`px-2 py-1 rounded-lg text-xs font-medium ${getStockStatusColor(
-                                product.stock
-                              )}`}
-                            >
-                              {getStockStatusText(product.stock)}
-                            </span>
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <div className={`text-2xl font-bold tabular-nums leading-none ${tone.text}`}>
+                              {p.stock.toFixed(2)}
+                            </div>
+                            <div className="text-[10px] text-gray-400 dark:text-neutral-500 mt-1 uppercase tracking-wider">
+                              {p.unit}
+                            </div>
                           </div>
                         </div>
 
-                        {/* Stock Quantity */}
-                        <div className="text-right pl-2">
-                          <div
-                            className={`text-xl font-bold ${getStockColor(
-                              product.stock
-                            )}`}
+                        <div className="pt-3 mt-1 border-t border-gray-100 dark:border-neutral-900">
+                          <div className="flex justify-between items-center">
+                            <div className="flex items-center gap-2">
+                              <div className="p-1.5 rounded-md bg-blue-50 dark:bg-blue-900/20">
+                                <DollarSign className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                              </div>
+                              <div>
+                                <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-neutral-500 font-semibold">Cost</p>
+                                <p className="text-[13px] font-semibold text-blue-600 dark:text-blue-400 tabular-nums">
+                                  ₹{new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(cost)}
+                                  <span className="text-neutral-400 dark:text-neutral-500 font-normal"> / {p.unit}</span>
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="p-1.5 rounded-md bg-purple-50 dark:bg-purple-900/20">
+                                <Calculator className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                              </div>
+                              <div className="text-right">
+                                <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-neutral-500 font-semibold">Value</p>
+                                <p className="text-[13px] font-semibold text-purple-600 dark:text-purple-400 tabular-nums">
+                                  ₹{new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(value)}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2 pt-3 border-t border-gray-100 dark:border-neutral-900 mt-3">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); openAdjust(p, "add"); }}
+                            className="flex-1 h-9 bg-green-500 hover:bg-green-600 text-white rounded-xl text-[11px] font-semibold active:scale-[0.97] transition flex items-center justify-center gap-1.5"
                           >
-                            {product.stock.toFixed(2)}
-                          </div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                            {product.unit}
-                          </div>
+                            <Plus className="w-3.5 h-3.5" /> Add
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); openAdjust(p, "reduce"); }}
+                            className="flex-1 h-9 bg-red-500 hover:bg-red-600 text-white rounded-xl text-[11px] font-semibold active:scale-[0.97] transition flex items-center justify-center gap-1.5"
+                          >
+                            <Minus className="w-3.5 h-3.5" /> Remove
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); openHistory(p); }}
+                            className="flex-1 h-9 bg-neutral-100 dark:bg-neutral-900 hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-800 dark:text-neutral-200 rounded-xl text-[11px] font-semibold active:scale-[0.97] transition flex items-center justify-center gap-1.5"
+                          >
+                            <History className="w-3.5 h-3.5" /> History
+                          </button>
                         </div>
-                      </div>
-
-                      {/* Cost and Stock Value Row - NEW */}
-                      <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
-                        <div className="flex justify-between items-center">
-                          <div className="flex items-center gap-2">
-                            <div className="p-1.5 rounded-md bg-blue-50 dark:bg-blue-900/20">
-                              <DollarSign className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                            </div>
-                            <div>
-                              <p className="text-xs text-gray-500 dark:text-gray-400">Cost</p>
-                              <p className="text-sm font-semibold text-blue-600 dark:text-blue-400">
-                                ₹
-                                {new Intl.NumberFormat("en-IN", {
-                                  maximumFractionDigits: 0,
-                                }).format(productCost > 0 ? productCost : 0)}{" "}
-                                per {product.unit}
-                              </p>
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center gap-2">
-                            <div className="p-1.5 rounded-md bg-purple-50 dark:bg-purple-900/20">
-                              <Calculator className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                            </div>
-                            <div className="text-right">
-                              <p className="text-xs text-gray-500 dark:text-gray-400">Stock Value</p>
-                              <p className={`text-sm font-semibold ${
-                                  stockValue < 0
-                                    ? "text-red-600 dark:text-red-400"
-                                    : "text-purple-600 dark:text-purple-400"
-                                }`}>
-                                ₹{new Intl.NumberFormat("en-IN", {
-                                  maximumFractionDigits: 0,
-                                }).format(stockValue)}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Action Buttons */}
-                      <div className="flex gap-2 pt-3 border-t border-gray-100 dark:border-gray-800 mt-3">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleQuickAdjust(product, "add");
-                          }}
-                          className="flex-1 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-xs font-medium active:scale-95 transition-all duration-200 flex items-center justify-center gap-1.5"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          Add
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleQuickAdjust(product, "reduce");
-                          }}
-                          className="flex-1 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-xs font-medium active:scale-95 transition-all duration-200 flex items-center justify-center gap-1.5"
-                        >
-                          <Minus className="w-3.5 h-3.5" />
-                          Remove
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleViewHistory(product);
-                          }}
-                          className="flex-1 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-xs font-medium active:scale-95 transition-all duration-200 flex items-center justify-center gap-1.5"
-                        >
-                          <History className="w-3.5 h-3.5" />
-                          History
-                        </button>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+
+              {hasMore && !searchTerm && !selectedGroup && stockFilter === "all" && (
+                <div className="flex justify-center mt-8">
+                  <button
+                    onClick={loadMoreClick}
+                    disabled={chunkLoading}
+                    className="px-6 py-3 rounded-full bg-neutral-900 text-white dark:bg-neutral-100 dark:text-black font-medium flex items-center gap-2 active:scale-95 transition disabled:opacity-50"
+                  >
+                    {chunkLoading ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" /> Loading…</>
+                    ) : (
+                      <><ChevronDown className="w-4 h-4" /> Load More</>
+                    )}
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
 
-        {/* Adjust Stock Modal */}
-        {showAdjustModal && selectedProduct && (
-          <div className="fixed inset-0 z-50">
-            <div
-              className="absolute inset-0 bg-black/70 dark:bg-black/70"
-              onClick={() => {
-                setShowAdjustModal(false);
-                setSelectedProduct(null);
-                setAdjustQuantity("");
-                setAdjustNote("");
-              }}
-            />
-            <div className="absolute bottom-0 left-0 right-0 bg-white dark:bg-neutral-950 rounded-t-3xl max-h-[90vh] overflow-hidden border-t border-neutral-200 dark:border-neutral-800">
-              <div className="flex justify-center pt-2">
-                <div className="w-12 h-1 bg-gray-300 dark:bg-gray-700 rounded-full"></div>
-              </div>
+        <Sheet
+          open={showGroupSheet}
+          onClose={() => setShowGroupSheet(false)}
+          title="Filter by group"
+          subtitle={selectedGroup ? "Tap to change" : "Pick a group to narrow results"}
+        >
+          <div className="p-5">
+            <div className="grid grid-cols-4 gap-4">
+              <button
+                onClick={() => { setSelectedGroup(null); setShowGroupSheet(false); }}
+                className="flex flex-col items-center"
+              >
+                <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-2 transition ${
+                  !selectedGroup
+                    ? "bg-purple-600 text-white ring-2 ring-purple-600 ring-offset-2 ring-offset-white dark:ring-offset-neutral-950"
+                    : "bg-gray-100 dark:bg-neutral-900 text-gray-500"
+                }`}>
+                  <span className="text-xs font-bold">ALL</span>
+                </div>
+                <span className={`text-[11px] text-center leading-tight ${
+                  !selectedGroup ? "text-purple-600 font-semibold" : "text-gray-600 dark:text-gray-400"
+                }`}>
+                  All
+                </span>
+              </button>
 
-              <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-bold">Adjust Stock</h2>
+              {inventoryGroups.map((g: any) => {
+                const isSel = selectedGroup === g.id;
+                return (
                   <button
-                    onClick={() => {
-                      setShowAdjustModal(false);
-                      setSelectedProduct(null);
-                      setAdjustQuantity("");
-                      setAdjustNote("");
-                    }}
-                    className="p-2"
+                    key={g.id}
+                    onClick={() => { setSelectedGroup(g.id); setShowGroupSheet(false); }}
+                    className="flex flex-col items-center"
                   >
-                    <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
-                  </button>
-                </div>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {selectedProduct.productName}
-                </p>
-              </div>
-
-              <div className="p-4 overflow-y-auto max-h-[60vh]">
-                {/* Current Stock */}
-                <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        Current Stock
-                      </p>
-                      <p className="text-2xl font-bold">
-                        {selectedProduct.stock.toFixed(2)}{" "}
-                        {selectedProduct.unit}
-                      </p>
+                    <div className={`w-16 h-16 rounded-full overflow-hidden mb-2 transition ${
+                      isSel
+                        ? "ring-2 ring-purple-600 ring-offset-2 ring-offset-white dark:ring-offset-neutral-950"
+                        : ""
+                    }`}>
+                      <img
+                        src={g.imageUrl || "/images/group-placeholder.png"}
+                        alt={g.name}
+                        onError={(e) => { e.currentTarget.src = "/images/group-placeholder.png"; }}
+                        className="w-full h-full object-cover"
+                      />
                     </div>
-                    <div
-                      className={`text-lg font-bold ${getStockColor(
-                        selectedProduct.stock
-                      )}`}
-                    >
-                      {getStockStatusText(selectedProduct.stock)}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Cost Information - NEW */}
-                <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">
-                        Cost per unit
-                      </p>
-                      <p className="text-lg font-bold text-blue-600 dark:text-blue-400">
-                        ₹{(productsCostMap[selectedProduct.productId] || selectedProduct.cost || 0).toFixed(2)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">
-                        Current Value
-                      </p>
-                      <p className="text-lg font-bold text-purple-600 dark:text-purple-400">
-                        ₹{((productsCostMap[selectedProduct.productId] || selectedProduct.cost || 0) * selectedProduct.stock).toFixed(2)}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Adjust Type */}
-                <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-xl mb-6">
-                  <button
-                    onClick={() => setAdjustType("add")}
-                    className={`flex-1 py-3 rounded-lg flex items-center justify-center gap-2 ${
-                      adjustType === "add"
-                        ? "bg-green-500 text-white"
-                        : "text-gray-600 dark:text-gray-400"
-                    }`}
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add Stock
+                    <span className={`text-[11px] text-center leading-tight max-w-[72px] line-clamp-2 ${
+                      isSel ? "text-purple-600 font-semibold" : "text-gray-600 dark:text-gray-400"
+                    }`}>
+                      {g.name}
+                    </span>
                   </button>
-                  <button
-                    onClick={() => setAdjustType("reduce")}
-                    className={`flex-1 py-3 rounded-lg flex items-center justify-center gap-2 ${
-                      adjustType === "reduce"
-                        ? "bg-red-500 text-white"
-                        : "text-gray-600 dark:text-gray-400"
-                    }`}
-                  >
-                    <Minus className="w-4 h-4" />
-                    Reduce Stock
-                  </button>
-                </div>
-
-                {/* Quantity Input */}
-                <div className="mb-6">
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
-                    Quantity
-                  </p>
-                  <div className="flex gap-2">
-                    <input
-                      ref={adjustInputRef}
-                      type="number"
-                      step="0.001"
-                      value={adjustQuantity}
-                      onChange={(e) => setAdjustQuantity(e.target.value)}
-                      placeholder="Enter amount"
-                      className="flex-1 px-4 py-3 bg-gray-50 dark:bg-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white"
-                    />
-                    <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800 rounded-xl text-gray-500 dark:text-gray-400">
-                      {selectedProduct.unit}
-                    </div>
-                  </div>
-                  {/* Value Impact - NEW */}
-                  {adjustQuantity && !isNaN(parseFloat(adjustQuantity)) && (
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                      Value impact: ₹
-                      {((productsCostMap[selectedProduct.productId] || selectedProduct.cost || 0) * 
-                        parseFloat(adjustQuantity) * 
-                        (adjustType === "add" ? 1 : -1)).toFixed(2)}
-                    </p>
-                  )}
-                </div>
-
-                {/* Note */}
-                <div className="mb-6">
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
-                    Note (Optional)
-                  </p>
-                  <textarea
-                    value={adjustNote}
-                    onChange={(e) => setAdjustNote(e.target.value)}
-                    placeholder="Reason for adjustment"
-                    rows={2}
-                    className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white resize-none"
-                  />
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => {
-                      setShowAdjustModal(false);
-                      setSelectedProduct(null);
-                      setAdjustQuantity("");
-                      setAdjustNote("");
-                    }}
-                    className="flex-1 py-3 bg-gray-100 dark:bg-gray-800 rounded-xl font-medium active:scale-95 text-gray-700 dark:text-gray-300"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleAdjustStock}
-                    className="flex-1 py-3 bg-blue-500 text-white rounded-xl font-medium flex items-center justify-center gap-2 active:scale-95"
-                  >
-                    <Check className="w-4 h-4" />
-                    Confirm
-                  </button>
-                </div>
-              </div>
+                );
+              })}
             </div>
           </div>
-        )}
+        </Sheet>
 
-        {/* History Modal */}
-        {showHistoryModal && selectedProduct && (
-          <div className="fixed inset-0 z-50">
-            <div
-              className="absolute inset-0 bg-black/70 dark:bg-black/70"
-              onClick={() => {
-                setShowHistoryModal(false);
-                setSelectedProduct(null);
-                setProductTransactions([]);
-              }}
-            />
-            <div className="absolute bottom-0 left-0 right-0 bg-white dark:bg-neutral-950 rounded-t-3xl max-h-[90vh] overflow-hidden border-t border-neutral-200 dark:border-neutral-800">
-              <div className="flex justify-center pt-2">
-                <div className="w-12 h-1 bg-gray-300 dark:bg-gray-700 rounded-full"></div>
-              </div>
-
-              <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-lg font-bold">Transaction History</h2>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-                      {selectedProduct.productName}
-                    </p>
+        <Sheet
+          open={showStockSheet}
+          onClose={() => setShowStockSheet(false)}
+          title="Filter by stock"
+        >
+          <div className="p-4 space-y-2 pb-6">
+            {(
+              [
+                { key: "all" as const, label: "All", sub: `${countAll} items`, tone: "neutral" },
+                { key: "low" as const, label: "Low", sub: `${countLow} items · 1–10`, tone: "orange" },
+                { key: "available" as const, label: "Available", sub: `${countAvailable} items · 11+`, tone: "emerald" },
+                { key: "out" as const, label: "Out", sub: `${countOut} items`, tone: "red" },
+              ] as const
+            ).map((opt) => {
+              const isSel = stockFilter === opt.key;
+              const tones: Record<string, string> = {
+                neutral: isSel
+                  ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-black"
+                  : "bg-neutral-100 dark:bg-neutral-900 text-neutral-800 dark:text-neutral-200",
+                orange: isSel
+                  ? "bg-orange-500 text-white"
+                  : "bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-300",
+                emerald: isSel
+                  ? "bg-emerald-500 text-white"
+                  : "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300",
+                red: isSel
+                  ? "bg-red-500 text-white"
+                  : "bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300",
+              };
+              return (
+                <button
+                  key={opt.key}
+                  onClick={() => { setStockFilter(opt.key); setShowStockSheet(false); }}
+                  className={`w-full flex items-center justify-between px-4 py-4 rounded-2xl transition active:scale-[0.98] ${tones[opt.tone]}`}
+                >
+                  <div className="text-left">
+                    <p className="font-semibold text-[15px]">{opt.label}</p>
+                    <p className="text-xs opacity-70 mt-0.5">{opt.sub}</p>
                   </div>
-                  <button
-                    onClick={() => {
-                      setShowHistoryModal(false);
-                      setSelectedProduct(null);
-                      setProductTransactions([]);
-                    }}
-                    className="p-2"
-                  >
-                    <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
-                  </button>
+                  {isSel && <Check className="w-5 h-5" />}
+                </button>
+              );
+            })}
+          </div>
+        </Sheet>
+
+        <Sheet
+          open={showAdjustModal}
+          onClose={() => {
+            setShowAdjustModal(false);
+            setSelectedProduct(null);
+            setAdjustQuantity("");
+            setAdjustNote("");
+          }}
+          title="Adjust Stock"
+          subtitle={selectedProduct?.productName}
+        >
+          {selectedProduct && (
+            <div className="p-4">
+              <div className="mb-5 p-4 bg-neutral-50 dark:bg-neutral-900 rounded-2xl flex justify-between items-center">
+                <div>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">Current</p>
+                  <p className="text-2xl font-bold tabular-nums">
+                    {selectedProduct.stock.toFixed(2)}
+                    <span className="text-sm font-medium text-neutral-400 ml-1">
+                      {selectedProduct.unit}
+                    </span>
+                  </p>
+                </div>
+                <div className={`text-xs font-bold px-3 py-1.5 rounded-full ${
+                  selectedProduct.stock === 0
+                    ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                    : selectedProduct.stock <= 10
+                    ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300"
+                    : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                }`}>
+                  {selectedProduct.stock === 0 ? "Out" : selectedProduct.stock <= 10 ? "Low" : "Available"}
                 </div>
               </div>
 
-              <div className="p-4 overflow-y-auto max-h-[60vh]">
-                {loading ? (
-                  <div className="text-center py-8">
-                    <div className="w-12 h-12 border-4 border-gray-200 dark:border-gray-800 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
-                    <p className="text-gray-500 dark:text-gray-400">
-                      Loading...
-                    </p>
-                  </div>
-                ) : productTransactions.length === 0 ? (
-                  <div className="text-center py-8">
-                    <History className="w-16 h-16 text-gray-300 dark:text-gray-800 mx-auto mb-4" />
-                    <p className="text-gray-500 dark:text-gray-400">
-                      No transactions yet
-                    </p>
-                  </div>
-                ) : (
-                  <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                    {productTransactions.map((transaction) => (
-                      <div
-                        key={transaction.id}
-                        className="p-3 bg-gray-50 dark:bg-neutral-900 rounded-xl"
-                      >
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex items-center gap-3">
-                            <div
-                              className={`p-2 rounded-lg ${
-                                transaction.quantityChange > 0
-                                  ? "bg-green-100 dark:bg-green-900/30"
-                                  : "bg-red-100 dark:bg-red-900/30"
-                              }`}
-                            >
-                              {transaction.quantityChange > 0 ? (
-                                <TrendingUp className="w-4 h-4 text-green-500" />
-                              ) : (
-                                <TrendingDown className="w-4 h-4 text-red-500" />
-                              )}
-                            </div>
-                            <div>
-                              <span
-                                className={`text-lg font-bold ${
-                                  transaction.quantityChange > 0
-                                    ? "text-green-600"
-                                    : "text-red-600"
-                                }`}
-                              >
-                                {transaction.quantityChange > 0 ? "+" : ""}
-                                {Number(transaction.quantityChange).toFixed(
-                                  2
-                                )}{" "}
-                                {transaction.unit}
-                              </span>
-                              <p className="text-xs text-gray-500 dark:text-gray-400 capitalize mt-1">
-                                {transaction.source}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-sm">
-                              {new Date(
-                                transaction.createdAt
-                              ).toLocaleDateString()}
-                            </p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
-                              {new Date(
-                                transaction.createdAt
-                              ).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </p>
-                          </div>
-                        </div>
+              <div className="mb-5 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-2xl grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mb-1">Cost per unit</p>
+                  <p className="text-base font-bold text-blue-600 dark:text-blue-400 tabular-nums">
+                    ₹{(productsCostMap[selectedProduct.productId] ?? selectedProduct.cost ?? 0).toFixed(2)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mb-1">Current value</p>
+                  <p className="text-base font-bold text-purple-600 dark:text-purple-400 tabular-nums">
+                    ₹{((productsCostMap[selectedProduct.productId] ?? selectedProduct.cost ?? 0) * selectedProduct.stock).toFixed(2)}
+                  </p>
+                </div>
+              </div>
 
-                        {transaction.note && (
-                          <p className="text-sm text-gray-700 dark:text-gray-300 mb-3 p-2 bg-white/50 dark:bg-neutral-900/50 rounded-lg">
-                            {transaction.note}
-                          </p>
-                        )}
+              <div className="flex bg-neutral-100 dark:bg-neutral-900 p-1 rounded-2xl mb-5">
+                <button
+                  onClick={() => setAdjustType("add")}
+                  className={`flex-1 py-3 rounded-xl flex items-center justify-center gap-2 text-sm font-semibold transition ${
+                    adjustType === "add"
+                      ? "bg-green-500 text-white shadow-sm"
+                      : "text-neutral-500 dark:text-neutral-400"
+                  }`}
+                >
+                  <Plus className="w-4 h-4" /> Add
+                </button>
+                <button
+                  onClick={() => setAdjustType("reduce")}
+                  className={`flex-1 py-3 rounded-xl flex items-center justify-center gap-2 text-sm font-semibold transition ${
+                    adjustType === "reduce"
+                      ? "bg-red-500 text-white shadow-sm"
+                      : "text-neutral-500 dark:text-neutral-400"
+                  }`}
+                >
+                  <Minus className="w-4 h-4" /> Reduce
+                </button>
+              </div>
 
-                        <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-                          <div className="flex items-center gap-1">
-                            <User className="w-3 h-3" />
-                            <span>{transaction.performedBy || "System"}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            <span>
-                              {new Date(
-                                transaction.createdAt
-                              ).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+              <div className="mb-5">
+                <label className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-2 block">
+                  Quantity
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    ref={adjustInputRef}
+                    type="number"
+                    inputMode="decimal"
+                    step="0.001"
+                    value={adjustQuantity}
+                    onChange={(e) => setAdjustQuantity(e.target.value)}
+                    placeholder="0"
+                    className="flex-1 h-14 px-4 bg-neutral-50 dark:bg-neutral-900 rounded-2xl text-lg font-semibold tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                  />
+                  <div className="h-14 px-4 bg-neutral-50 dark:bg-neutral-900 rounded-2xl text-sm text-neutral-500 dark:text-neutral-400 flex items-center">
+                    {selectedProduct.unit}
                   </div>
+                </div>
+                {adjustQuantity && !isNaN(parseFloat(adjustQuantity)) && (
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">
+                    Value impact: ₹
+                    {((productsCostMap[selectedProduct.productId] ?? selectedProduct.cost ?? 0) *
+                      parseFloat(adjustQuantity) *
+                      (adjustType === "add" ? 1 : -1)
+                    ).toFixed(2)}
+                  </p>
                 )}
               </div>
+
+              <div className="mb-6">
+                <label className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-2 block">
+                  Note (optional)
+                </label>
+                <textarea
+                  value={adjustNote}
+                  onChange={(e) => setAdjustNote(e.target.value)}
+                  placeholder="Reason for adjustment"
+                  rows={2}
+                  className="w-full px-4 py-3 bg-neutral-50 dark:bg-neutral-900 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 resize-none"
+                />
+              </div>
+
+              <div className="flex gap-3 pb-4">
+                <button
+                  onClick={() => {
+                    setShowAdjustModal(false);
+                    setSelectedProduct(null);
+                    setAdjustQuantity("");
+                    setAdjustNote("");
+                  }}
+                  className="flex-1 h-14 bg-neutral-100 dark:bg-neutral-900 rounded-2xl font-semibold text-neutral-700 dark:text-neutral-300 active:scale-[0.98] transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAdjust}
+                  className="flex-1 h-14 bg-blue-500 hover:bg-blue-600 text-white rounded-2xl font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition shadow-sm"
+                >
+                  <Check className="w-4 h-4" /> Confirm
+                </button>
+              </div>
             </div>
+          )}
+        </Sheet>
+
+        <Sheet
+          open={showHistoryModal}
+          onClose={() => {
+            setShowHistoryModal(false);
+            setSelectedProduct(null);
+            setProductTransactions([]);
+          }}
+          title="Transaction History"
+          subtitle={selectedProduct?.productName}
+        >
+          <div className="p-4">
+            {historyLoading ? (
+              <div className="text-center py-10">
+                <div className="w-10 h-10 border-3 border-neutral-200 dark:border-neutral-800 border-t-blue-500 rounded-full animate-spin mx-auto mb-3" />
+                <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading…</p>
+              </div>
+            ) : productTransactions.length === 0 ? (
+              <div className="text-center py-12">
+                <History className="w-14 h-14 text-neutral-200 dark:text-neutral-800 mx-auto mb-3" />
+                <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                  No transactions yet
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2 pb-4">
+                {productTransactions.map((t) => {
+                  const positive = t.quantityChange > 0;
+                  return (
+                    <div
+                      key={t.id}
+                      className="p-3.5 bg-neutral-50 dark:bg-neutral-900 rounded-2xl"
+                    >
+                      <div className="flex items-start justify-between mb-2.5">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                            positive
+                              ? "bg-emerald-100 dark:bg-emerald-900/30"
+                              : "bg-rose-100 dark:bg-rose-900/30"
+                          }`}>
+                            {positive ? (
+                              <TrendingUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                            ) : (
+                              <TrendingDown className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                            )}
+                          </div>
+                          <div>
+                            <div className={`text-base font-bold tabular-nums ${
+                              positive
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : "text-rose-600 dark:text-rose-400"
+                            }`}>
+                              {positive ? "+" : ""}
+                              {Number(t.quantityChange).toFixed(2)}
+                              <span className="text-xs font-medium text-neutral-400 ml-1">{t.unit}</span>
+                            </div>
+                            <p className="text-[11px] text-neutral-500 dark:text-neutral-400 capitalize mt-0.5">
+                              {t.source}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[11px] font-medium text-neutral-700 dark:text-neutral-300">
+                            {new Date(t.createdAt).toLocaleDateString("en-IN", {
+                              day: "2-digit", month: "short",
+                            })}
+                          </p>
+                          <p className="text-[10px] text-neutral-500 dark:text-neutral-500 tabular-nums">
+                            {new Date(t.createdAt).toLocaleTimeString([], {
+                              hour: "2-digit", minute: "2-digit",
+                            })}
+                          </p>
+                        </div>
+                      </div>
+
+                      {t.note && (
+                        <p className="text-xs text-neutral-700 dark:text-neutral-300 p-2.5 bg-white dark:bg-neutral-950 rounded-xl mb-2">
+                          {t.note}
+                        </p>
+                      )}
+
+                      <div className="flex items-center justify-between text-[10px] text-neutral-500 dark:text-neutral-500">
+                        <div className="flex items-center gap-1">
+                          <User className="w-3 h-3" />
+                          <span className="truncate max-w-[180px]">{t.performedBy || "System"}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          <span>
+                            {new Date(t.createdAt).toLocaleTimeString([], {
+                              hour: "2-digit", minute: "2-digit",
+                            })}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        )}
+        </Sheet>
       </div>
     </>
   );

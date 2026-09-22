@@ -1,9 +1,11 @@
+// src/hooks/useProducts.ts
+import { useState, useEffect } from "react";
+import { database } from "../config/firebase";
+import { loadFirebase } from "../config/firebaseLoader";
+import { cache } from "../lib/cache";
+import toast from "react-hot-toast";
 
-import { useState, useEffect } from 'react';
-import { database } from '../config/firebase';
-import toast from 'react-hot-toast';
-import { loadFirebase } from '../config/firebaseLoader';
-const { ref, onValue, get } = await loadFirebase();
+const { ref, onValue } = await loadFirebase();
 
 export interface Product {
   id: string;
@@ -20,84 +22,71 @@ export interface Transaction {
   productName: string;
   quantityChange: number;
   unit: string;
-  source: 'quotation' | 'manual' | 'purchase';
+  source: "quotation" | "manual" | "purchase";
   quotationId?: string;
   purchaseId?: string;
   note?: string;
   createdAt: number;
-  cls?: string;
 }
 
+const P_KEY = "products";
+
 export function useProducts() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [transactions, setTransactions] = useState<{[key: string]: Transaction[]}>({});
-  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState<Product[]>(
+    () => cache.get<Product[]>(P_KEY) ?? []
+  );
+  const [transactions, setTransactions] = useState<{ [k: string]: Transaction[] }>({});
+  const [loading, setLoading] = useState(() => !cache.get<Product[]>(P_KEY));
 
   useEffect(() => {
-    const productsRef = ref(database, 'quotations/manualInventory');
-    setLoading(true);
+    const productsRef = ref(database, "quotations/manualInventory");
 
-    const fetchProducts = async () => {
-      try {
-        const snapshot = await get(productsRef);
-        if (snapshot.exists()) {
-          const data = snapshot.val();
-          const productsList: Product[] = Object.entries(data).map(([key, value]: any) => ({
-            id: key,
-            productId: value.productId || key,
-            productName: value.productName || 'Unknown Product',
-            stock: value.stock || 0,
-            unit: value.unit || 'piece',
-            lastupdatedAt: value.updatedAt || value.createdAt || Date.now(),
-          }));
-          setProducts(productsList);
-          fetchTransactionsForAllProducts(productsList);
-        } else {
-          setProducts([]);
-          setLoading(false);
-        }
-      } catch (err: any) {
-        console.error('Error loading products:', err);
-        toast.error('Failed to load products');
+    const unsub = onValue(productsRef, (snap) => {
+      if (!snap.exists()) {
+        setProducts([]);
+        cache.set(P_KEY, []);
         setLoading(false);
+        return;
       }
-    };
-
-    const fetchTransactionsForAllProducts = async (products: Product[]) => {
-        const transactionsData: {[key: string]: Transaction[]} = {};
-        for (const product of products) {
-            try {
-                const transactionsRef = ref(database, `quotations/inventoryTransactions/${product.id}`);
-                const snapshot = await get(transactionsRef);
-                if (snapshot.exists()) {
-                    const data = snapshot.val();
-                    const transactionsList = Object.entries(data)
-                        .map(([key, value]: any) => ({
-                        id: key,
-                        ...value,
-                        }))
-                        .sort((a: Transaction, b: Transaction) => b.createdAt - a.createdAt);
-                    transactionsData[product.id] = transactionsList;
-                } else {
-                    transactionsData[product.id] = [];
-                }
-            } catch (err: any) {
-                console.error(`Error loading transactions for product ${product.id}:`, err);
-                toast.error(`Failed to load transaction history for ${product.productName}`);
-            }
-        }
-        setTransactions(transactionsData);
-        setLoading(false);
-    }
-
-    fetchProducts();
-    
-    const unsubscribe = onValue(productsRef, (_snapshot) => {
-      fetchProducts();
+      const list: Product[] = [];
+      snap.forEach((child) => {
+        const v: any = child.val();
+        list.push({
+          id: child.key!,
+          productId: v.productId || child.key!,
+          productName: v.productName || "Unknown Product",
+          stock: v.stock || 0,
+          unit: v.unit || "piece",
+          lastupdatedAt: v.updatedAt || v.createdAt || Date.now(),
+        });
+      });
+      setProducts(list);
+      cache.set(P_KEY, list);
+      setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => unsub();
   }, []);
 
-  return { products, transactions, loading };
+  // Transactions are lazy-loaded by the page when it needs them.
+  // Keeping them out of the mount path is what makes this tab snap.
+  const fetchAllTransactions = async () => {
+    const { get } = await loadFirebase();
+    const map: { [k: string]: Transaction[] } = {};
+    await Promise.all(
+      products.map(async (p) => {
+        const snap = await get(
+          ref(database, `quotations/inventoryTransactions/${p.id}`)
+        );
+        if (!snap.exists()) { map[p.id] = []; return; }
+        const arr: Transaction[] = [];
+        snap.forEach((c) => arr.push({ id: c.key!, ...c.val() }));
+        map[p.id] = arr.sort((a, b) => b.createdAt - a.createdAt);
+      })
+    );
+    setTransactions(map);
+    return map;
+  };
+
+  return { products, transactions, loading, fetchAllTransactions };
 }
