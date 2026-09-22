@@ -48,12 +48,58 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+/* -------------------- Auth cache (fixes slow cold start) --------------------
+ * We stash { uid, profile } in localStorage every time we get a confirmed
+ * profile from Firebase. On the next launch we hydrate `user`/`userProfile`
+ * from that cache SYNCHRONOUSLY (in the useState initializer), so the app
+ * can render the real navigation + real page immediately instead of
+ * blocking on: (dynamic import of the Firebase SDK) -> (onAuthStateChanged)
+ * -> (a network round-trip to Realtime Database for the role).
+ *
+ * Firebase still loads and verifies in the background as before; if the
+ * real result differs from the cache (role changed, session revoked, user
+ * logged out elsewhere) state is corrected silently once that resolves.
+ * ------------------------------------------------------------------------- */
+const AUTH_CACHE_KEY = "auth:cache";
+
+interface AuthCache {
+  uid: string;
+  profile: UserProfile;
+}
+
+const getCachedAuth = (): AuthCache | null => {
+  try {
+    const raw = localStorage.getItem(AUTH_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as AuthCache) : null;
+  } catch {
+    return null;
+  }
+};
+
+const setCachedAuth = (cache: AuthCache | null) => {
+  try {
+    if (cache) localStorage.setItem(AUTH_CACHE_KEY, JSON.stringify(cache));
+    else localStorage.removeItem(AUTH_CACHE_KEY);
+  } catch {
+    /* ignore quota / privacy-mode errors */
+  }
+};
+
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
-  const [user, setUser] = useState<any>(null);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [initializing, setInitializing] = useState(true);
+  // Read the cache once, on mount only.
+  const [cached] = useState<AuthCache | null>(getCachedAuth);
+
+  const [user, setUser] = useState<any>(
+    cached ? { uid: cached.uid } : null
+  );
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(
+    cached?.profile ?? null
+  );
+  // If we already have a cached session, don't block the UI at all —
+  // render immediately with the cached role and reconcile in the background.
+  const [initializing, setInitializing] = useState<boolean>(!cached);
   const [darkMode, setDarkMode] = useState<"dark" | "light">(
     (getLocalStorage("darkmode") as "dark" | "light") || "light"
   );
@@ -67,13 +113,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
           try {
             const dbRef = ref(database);
             const snapshot = await get(child(dbRef, `users/${authUser.uid}`));
-            if (snapshot.exists()) setUserProfile(snapshot.val());
+            if (snapshot.exists()) {
+              const profile = snapshot.val() as UserProfile;
+              setUserProfile(profile);
+              setCachedAuth({ uid: authUser.uid, profile });
+            }
           } catch (err) {
             console.error(err);
           }
         } else {
           setUser(null);
           setUserProfile(null);
+          setCachedAuth(null);
         }
         setInitializing(false);
       });
@@ -104,6 +155,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
 
     await set(ref(database, `users/${user.uid}`), profile);
     setUserProfile(profile);
+    setCachedAuth({ uid: user.uid, profile });
   };
 
   // Login
@@ -115,7 +167,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     const result = await signInWithEmailAndPassword(auth, email, password);
     const uid = result.user.uid;
     const snapshot = await get(child(ref(database), `users/${uid}`));
-    if (snapshot.exists()) setUserProfile(snapshot.val());
+    if (snapshot.exists()) {
+      const profile = snapshot.val() as UserProfile;
+      setUserProfile(profile);
+      setCachedAuth({ uid, profile });
+    }
   };
 
   // Google login
@@ -146,8 +202,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       };
       await set(ref(database, `users/${user.uid}`), profile);
       setUserProfile(profile);
+      setCachedAuth({ uid: user.uid, profile });
     } else {
-      setUserProfile(snapshot.val());
+      const profile = snapshot.val() as UserProfile;
+      setUserProfile(profile);
+      setCachedAuth({ uid: user.uid, profile });
     }
   };
 
@@ -157,6 +216,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     await auth.signOut();
     setUser(null);
     setUserProfile(null);
+    setCachedAuth(null);
   };
 
   // Update profile
@@ -166,6 +226,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     const updatedProfile = { ...userProfile, ...data } as UserProfile;
     await set(ref(database, `users/${user.uid}`), updatedProfile);
     setUserProfile(updatedProfile);
+    setCachedAuth({ uid: user.uid, profile: updatedProfile });
   };
 
   // Dark mode

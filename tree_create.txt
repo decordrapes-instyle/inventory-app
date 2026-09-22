@@ -1,0 +1,51 @@
+function Show-Tree {
+    param(
+        [string]$Path,
+        [string]$Prefix = ""
+    )
+
+    $items = Get-ChildItem -LiteralPath $Path -Force |
+        Where-Object {
+            $_.Name -notin @("node_modules", "android", ".git", "tree.txt")
+        } |
+        Sort-Object @{Expression={$_.PSIsContainer}; Descending=$true}, Name
+
+    for ($i = 0; $i -lt $items.Count; $i++) {
+        $item = $items[$i]
+        $isLast = ($i -eq $items.Count - 1)
+
+        if ($isLast) {
+            $branch = "+-- "
+            $nextPrefix = "$Prefix    "
+        } else {
+            $branch = "+-- "
+            $nextPrefix = "$Prefix|   "
+        }
+
+        Add-Content -Path "tree.txt" -Value "$Prefix$branch$($item.Name)" -Encoding UTF8
+
+        if ($item.PSIsContainer) {
+            Show-Tree -Path $item.FullName -Prefix $nextPrefix
+        }
+    }
+}
+
+Remove-Item "tree.txt" -ErrorAction SilentlyContinue
+
+Add-Content -Path "tree.txt" -Value "." -Encoding UTF8
+
+Show-Tree -Path (Get-Location).Path
+
+Write-Host "Tree saved to tree.txt"
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAD4piXNNzWi3z1riCEl07NHnjg2IHcFhc",
+  authDomain: "decor-drapes.firebaseapp.com",
+  databaseURL:
+    "https://decor-drapes-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "decor-drapes",
+  storageBucket: "decor-drapes.firebasestorage.app",
+  messagingSenderId: "175917446618",
+  appId: "1:175917446618:web:1567dfe6a9d9c43e873ce3",
+  measurementId: "G-8W8BZMLVZC",
+};
