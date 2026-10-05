@@ -100,67 +100,69 @@ const Sheet: React.FC<{
         style={{ opacity: backdropOpacity * 0.6, transition: "opacity 150ms" }}
         onClick={onClose}
       />
-      <div
-        className="absolute bottom-0 left-0 right-0 bg-white dark:bg-neutral-950 rounded-t-[28px] overflow-hidden shadow-2xl"
-        style={{
-          maxHeight: "92vh",
-          transform: `translateY(${dragY}px)`,
-          transition: dragging.current
-            ? "none"
-            : "transform 300ms cubic-bezier(0.32, 0.72, 0, 1)",
-          touchAction: "none",
-          willChange: "transform",
-        }}
-      >
+      <div className="absolute inset-x-0 bottom-0 flex justify-center pointer-events-none">
         <div
-          className="flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing"
-          style={{ touchAction: "none" }}
-          onTouchStart={(e) => begin(e.touches[0].clientY)}
-          onTouchMove={(e) => move(e.touches[0].clientY)}
-          onTouchEnd={(e) => end(e.changedTouches[0].clientY)}
-          onMouseDown={(e) => {
-            begin(e.clientY);
-            const mv = (ev: MouseEvent) => move(ev.clientY);
-            const up = (ev: MouseEvent) => {
-              end(ev.clientY);
-              document.removeEventListener("mousemove", mv);
-              document.removeEventListener("mouseup", up);
-            };
-            document.addEventListener("mousemove", mv);
-            document.addEventListener("mouseup", up);
+          className="w-full sm:max-w-xl pointer-events-auto bg-white dark:bg-neutral-950 rounded-t-[28px] overflow-hidden shadow-2xl"
+          style={{
+            maxHeight: "92vh",
+            transform: `translateY(${dragY}px)`,
+            transition: dragging.current
+              ? "none"
+              : "transform 300ms cubic-bezier(0.32, 0.72, 0, 1)",
+            touchAction: "none",
+            willChange: "transform",
           }}
         >
-          <div className="w-10 h-1.5 bg-black/25 dark:bg-white/25 rounded-full" />
-        </div>
-
-        {(title || subtitle) && (
-          <div className="px-5 pb-3 flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              {title && (
-                <h2 className="text-lg font-bold text-neutral-900 dark:text-white truncate">
-                  {title}
-                </h2>
-              )}
-              {subtitle && (
-                <p className="text-sm text-neutral-500 dark:text-neutral-400 truncate">
-                  {subtitle}
-                </p>
-              )}
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 -mr-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
-            >
-              <X className="w-5 h-5 text-neutral-500" />
-            </button>
+          <div
+            className="flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing"
+            style={{ touchAction: "none" }}
+            onTouchStart={(e) => begin(e.touches[0].clientY)}
+            onTouchMove={(e) => move(e.touches[0].clientY)}
+            onTouchEnd={(e) => end(e.changedTouches[0].clientY)}
+            onMouseDown={(e) => {
+              begin(e.clientY);
+              const mv = (ev: MouseEvent) => move(ev.clientY);
+              const up = (ev: MouseEvent) => {
+                end(ev.clientY);
+                document.removeEventListener("mousemove", mv);
+                document.removeEventListener("mouseup", up);
+              };
+              document.addEventListener("mousemove", mv);
+              document.addEventListener("mouseup", up);
+            }}
+          >
+            <div className="w-10 h-1.5 bg-black/25 dark:bg-white/25 rounded-full" />
           </div>
-        )}
 
-        <div
-          className="overflow-y-auto overscroll-contain"
-          style={{ maxHeight: "calc(92vh - 80px)" }}
-        >
-          {children}
+          {(title || subtitle) && (
+            <div className="px-5 pb-3 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                {title && (
+                  <h2 className="text-lg font-bold text-neutral-900 dark:text-white truncate">
+                    {title}
+                  </h2>
+                )}
+                {subtitle && (
+                  <p className="text-sm text-neutral-500 dark:text-neutral-400 truncate">
+                    {subtitle}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={onClose}
+                className="p-2 -mr-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
+              >
+                <X className="w-5 h-5 text-neutral-500" />
+              </button>
+            </div>
+          )}
+
+          <div
+            className="overflow-y-auto overscroll-contain"
+            style={{ maxHeight: "calc(92vh - 80px)" }}
+          >
+            {children}
+          </div>
         </div>
       </div>
     </div>
@@ -198,13 +200,11 @@ const AutoInventoryPage: React.FC = () => {
   const [showSearchInput, setShowSearchInput] = useState(false);
   const [showGroupSheet, setShowGroupSheet] = useState(false);
   const [showStockSheet, setShowStockSheet] = useState(false);
-  const [showHeader, setShowHeader] = useState(true);
   const [chunkLoading, setChunkLoading] = useState(false);
 
   const headerRef = useRef<HTMLElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const adjustInputRef = useRef<HTMLInputElement>(null);
-  const lastScrollY = useRef(0);
 
   const hasActiveFilters =
     !!searchTerm || !!selectedGroup || stockFilter !== "all";
@@ -228,44 +228,12 @@ const AutoInventoryPage: React.FC = () => {
     setSearchTerm("");
   });
 
-  /* ---------- scroll hide/show ---------- */
-  useEffect(() => {
-    const onScroll = () => {
-      const y = window.scrollY;
-      if (showSearchInput) { setShowHeader(true); return; }
-      if (y < lastScrollY.current) setShowHeader(true);
-      else if (y > lastScrollY.current + 12) setShowHeader(false);
-      lastScrollY.current = y;
-    };
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, [showSearchInput]);
-
   /* ---------- focus search ---------- */
   useEffect(() => {
     if (showSearchInput) {
       const t = setTimeout(() => searchInputRef.current?.focus(), 40);
       return () => clearTimeout(t);
     }
-  }, [showSearchInput]);
-
-  /* ---------- tap outside search ---------- */
-  useEffect(() => {
-    if (!showSearchInput) return;
-    const onDown = (e: MouseEvent | TouchEvent) => {
-      const hdr = headerRef.current;
-      if (!hdr) return;
-      if (!hdr.contains(e.target as Node)) {
-        setShowSearchInput(false);
-        setSearchTerm("");
-      }
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("touchstart", onDown, { passive: true });
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("touchstart", onDown);
-    };
   }, [showSearchInput]);
 
   /* ---------- ESC ---------- */
@@ -295,10 +263,8 @@ const AutoInventoryPage: React.FC = () => {
     showGroupSheet, showStockSheet, showSearchInput,
   ]);
 
-  /* ---------- focus adjust input ---------- */
-  useEffect(() => {
-    if (showAdjustModal) setTimeout(() => adjustInputRef.current?.focus(), 120);
-  }, [showAdjustModal]);
+  /* ---------- focus adjust input (disabled auto focus on card click) ---------- */
+
 
   /* ---------- body scroll lock ---------- */
   useEffect(() => {
@@ -418,92 +384,131 @@ const AutoInventoryPage: React.FC = () => {
         <header
           ref={headerRef as any}
           style={{ paddingTop: SAFE_TOP }}
-          className={`fixed top-0 left-0 right-0 z-30
+          className="fixed top-0 left-0 right-0 xl:left-64 z-30
             bg-white/85 dark:bg-black/85 backdrop-blur-xl
             shadow-[0_1px_0_0_rgba(0,0,0,0.04),0_10px_28px_-14px_rgba(0,0,0,0.10)]
-            dark:shadow-[0_1px_0_0_rgba(255,255,255,0.04),0_10px_28px_-14px_rgba(0,0,0,0.8)]
-            transition-transform duration-300
-            will-change-transform
-            ${showHeader ? "translate-y-0" : "-translate-y-full"}`}
+            dark:shadow-[0_1px_0_0_rgba(255,255,255,0.04),0_10px_28px_-14px_rgba(0,0,0,0.8)]"
         >
-          <div className="flex items-center px-3 gap-1.5" style={{ height: TOPBAR_H }}>
-            {showSearchInput ? (
-              <>
-                <button
-                  onClick={() => { setShowSearchInput(false); setSearchTerm(""); }}
-                  className="p-2 -ml-1 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
-                  aria-label="Close search"
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    ref={searchInputRef}
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Search fabrics…"
-                    className="w-full h-10 pl-9 pr-9 rounded-full bg-gray-100 dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 border-0"
-                  />
-                  {searchTerm && (
-                    <button
-                      onClick={() => setSearchTerm("")}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full"
-                      aria-label="Clear"
-                    >
-                      <X className="w-3.5 h-3.5 text-gray-500" />
-                    </button>
-                  )}
-                </div>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={goBack}
-                  className="p-2 -ml-1 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
-                  aria-label="Back"
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                <h1 className="text-base font-bold truncate flex-1 ml-1">
-                  Fabric Inventory
-                </h1>
-
-                <button
-                  onClick={() => setShowSearchInput(true)}
-                  className="p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
-                  aria-label="Search"
-                >
-                  <Search className="w-5 h-5" />
-                </button>
-
-                {inventoryGroups.length > 0 && (
+          <div className="relative flex items-center justify-between px-3 md:px-5 gap-2" style={{ height: TOPBAR_H }}>
+            {/* Mobile Header (< md): toggles search input when opened */}
+            <div className="flex md:hidden items-center flex-1 gap-1.5 min-w-0">
+              {showSearchInput ? (
+                <>
                   <button
-                    onClick={() => setShowGroupSheet(true)}
-                    className={`relative p-2 rounded-full ${
-                      selectedGroup
-                        ? "bg-purple-500 text-white"
-                        : "hover:bg-neutral-100 dark:hover:bg-neutral-900"
-                    }`}
-                    aria-label="Groups"
+                    onClick={() => { setShowSearchInput(false); setSearchTerm(""); }}
+                    className="p-2 -ml-1 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                    aria-label="Close search"
                   >
-                    <Layers className="w-5 h-5" />
+                    <ArrowLeft className="w-5 h-5" />
+                  </button>
+                  <div className="flex-1 relative min-w-0">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      ref={searchInputRef}
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      placeholder="Search fabrics…"
+                      className="w-full h-10 pl-9 pr-9 rounded-full bg-gray-100 dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 border-0"
+                    />
+                    {searchTerm && (
+                      <button
+                        onClick={() => setSearchTerm("")}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                        aria-label="Clear"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={goBack}
+                    className="p-2 -ml-1 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                    aria-label="Back"
+                  >
+                    <ArrowLeft className="w-5 h-5" />
+                  </button>
+                  <h1 className="text-base font-bold truncate flex-1 ml-1">
+                    Fabric Inventory
+                  </h1>
+
+                  <button
+                    onClick={() => setShowSearchInput(true)}
+                    className="p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                    aria-label="Search"
+                  >
+                    <Search className="w-5 h-5" />
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* Tablet & Desktop Left Brand (>= md) */}
+            <div className="hidden md:flex items-center gap-2.5 shrink-0 z-10">
+              <button
+                onClick={goBack}
+                className="p-2 -ml-1 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                aria-label="Back"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <h1 className="text-lg font-bold tracking-tight">Fabric Inventory</h1>
+            </div>
+
+            {/* Tablet & Desktop TOTAL CENTER Search Bar (>= md) */}
+            <div className="hidden md:flex absolute left-1/2 -translate-x-1/2 w-full max-w-sm lg:max-w-md xl:max-w-lg px-4 justify-center pointer-events-none">
+              <div className="relative w-full pointer-events-auto">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search fabrics…"
+                  className="w-full h-10 pl-10 pr-9 rounded-full bg-gray-100 dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 border-0"
+                />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                    aria-label="Clear"
+                  >
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 )}
+              </div>
+            </div>
 
+            {/* Filter buttons */}
+            <div className="flex items-center gap-1 shrink-0">
+              {inventoryGroups.length > 0 && (
                 <button
-                  onClick={() => setShowStockSheet(true)}
-                  className={`relative p-2 rounded-full ${
-                    stockFilter !== "all"
-                      ? "bg-orange-500 text-white"
-                      : "hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                  onClick={() => setShowGroupSheet(true)}
+                  className={`relative p-2 rounded-full transition ${
+                    selectedGroup
+                      ? "bg-purple-500 text-white"
+                      : "hover:bg-neutral-100 dark:hover:bg-neutral-900 text-neutral-700 dark:text-neutral-300"
                   }`}
-                  aria-label="Stock filter"
+                  aria-label="Groups"
+                  title="Filter by group"
                 >
-                  <Filter className="w-5 h-5" />
+                  <Layers className="w-5 h-5" />
                 </button>
-              </>
-            )}
+              )}
+
+              <button
+                onClick={() => setShowStockSheet(true)}
+                className={`relative p-2 rounded-full transition ${
+                  stockFilter !== "all"
+                    ? "bg-orange-500 text-white"
+                    : "hover:bg-neutral-100 dark:hover:bg-neutral-900 text-neutral-700 dark:text-neutral-300"
+                }`}
+                aria-label="Stock filter"
+                title="Filter by stock"
+              >
+                <Filter className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           {hasActiveFilters && (
@@ -564,8 +569,8 @@ const AutoInventoryPage: React.FC = () => {
 
         <div style={{ height: spacerHeight }} />
 
-        <div className="p-4">
-          <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="p-3 sm:p-4 md:p-6">
+          <div className="grid grid-cols-2 gap-3 md:gap-4 mb-4">
             <div className="rounded-2xl p-4 bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800">
               <div className="flex items-center gap-2 mb-2">
                 <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
@@ -619,7 +624,7 @@ const AutoInventoryPage: React.FC = () => {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4">
                 {filteredProducts.map((p) => {
                   const cost = productsCostMap[p.productId] ?? p.cost ?? 0;
                   const value = cost * p.stock;

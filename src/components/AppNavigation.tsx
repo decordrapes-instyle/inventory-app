@@ -1,5 +1,5 @@
-import React, { memo, useMemo } from "react";
-import { Home, Package, Bell, TrendingUp } from "lucide-react";
+import React, { memo } from "react";
+import { Home, Package, Bell, TrendingUp, User } from "lucide-react";
 import { useNavigation } from "../context/NavigationContext";
 import { useAuth } from "../context/AuthContext";
 
@@ -11,55 +11,44 @@ type NavItemProps = {
 };
 
 /* -------------------- Mobile Nav Item -------------------- */
-const MobileNavItem = memo(({ to, icon: Icon, label }: NavItemProps) => {
+/* -------------------- Floating Glossy Glass Pill Item -------------------- */
+const FloatingPillNavItem = memo(({ to, icon: Icon, label }: NavItemProps) => {
   const { navigate, currentPath } = useNavigation();
   const isActive = currentPath === to;
 
   return (
-    <a
-      href="#"
+    <button
       onClick={(e) => {
         e.preventDefault();
         navigate(to);
       }}
-      className="flex flex-col items-center justify-center h-full w-full"
+      className={`group relative flex items-center justify-center gap-1.5 sm:gap-2
+        px-3.5 sm:px-4.5 py-2.5 sm:py-3 rounded-full text-xs font-semibold
+        transition-all duration-200 active:scale-95
+        ${
+          isActive
+            ? "bg-neutral-950/90 text-white dark:bg-white/95 dark:text-neutral-950 shadow-[0_4px_14px_rgba(0,0,0,0.25),inset_0_1px_1px_rgba(255,255,255,0.4)]"
+            : "text-neutral-800 dark:text-neutral-200 hover:text-black dark:hover:text-white hover:bg-white/40 dark:hover:bg-white/10"
+        }`}
+      aria-label={label}
+      aria-current={isActive ? "page" : undefined}
     >
-      <div className="relative flex flex-col items-center">
-        {/* Active indicator */}
-        {isActive && (
-          <div
-            className="absolute -top-1 left-1/2 -translate-x-1/2
-                       w-16 h-8 rounded-full
-                       bg-slate-600 dark:bg-neutral-300"
-          />
-        )}
-
-        <div className="relative z-10 flex flex-col items-center">
-          {/* Icon */}
-          <Icon
-            className={`w-6 h-6 transition-colors ${
-              isActive
-                ? "text-white dark:text-neutral-900"
-                : "text-gray-500 dark:text-gray-500"
-            }`}
-          />
-
-          {/* Label */}
-          <span
-            className={`text-xs mt-2 transition-all ${
-              isActive
-                ? "font-semibold text-gray-800 dark:text-gray-300"
-                : "font-normal text-gray-500 dark:text-gray-500"
-            }`}
-          >
-            {label}
-          </span>
-        </div>
-      </div>
-    </a>
+      <Icon
+        className={`w-[18px] h-[18px] sm:w-5 sm:h-5 transition-transform duration-200 ${
+          isActive ? "scale-105" : "group-hover:scale-105"
+        }`}
+      />
+      <span
+        className={`text-[12px] sm:text-[13px] tracking-tight whitespace-nowrap ${
+          isActive ? "inline" : "hidden sm:inline"
+        }`}
+      >
+        {label}
+      </span>
+    </button>
   );
 });
-MobileNavItem.displayName = "MobileNavItem";
+FloatingPillNavItem.displayName = "FloatingPillNavItem";
 
 /* -------------------- Desktop Nav Item -------------------- */
 const DesktopNavItem = memo(({ to, icon: Icon, label }: NavItemProps) => {
@@ -89,30 +78,23 @@ DesktopNavItem.displayName = "DesktopNavItem";
 /* -------------------- Main Navigation -------------------- */
 const AppNavigation: React.FC = () => {
   const { user, userProfile, initializing } = useAuth();
-  const { navigate, currentPath } = useNavigation();
-
   const isAdmin = userProfile?.role === "admin";
-
-  const avatar = useMemo(() => {
-    if (!userProfile) return "";
-    return (
-      userProfile.profileImage ||
-      `https://ui-avatars.com/api/?name=${encodeURIComponent(
-        userProfile.displayName || "User"
-      )}&background=111827&color=fff`
-    );
-  }, [userProfile]);
 
   if (!initializing && !user) return null;
 
-  const isProfileActive = currentPath === "/profile";
-
   return (
     <>
-      {/* Desktop Sidebar */}
-      <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:w-64 lg:flex lg:flex-col bg-white dark:bg-black border-r border-gray-200 dark:border-gray-800">
+      {/* Desktop Sidebar (Only on large desktop screens >= xl) */}
+      <aside className="hidden xl:flex xl:fixed xl:inset-y-0 xl:left-0 xl:w-64 xl:flex-col bg-white dark:bg-black border-r border-gray-200 dark:border-gray-800 z-40 select-none">
         <div className="flex flex-col flex-1 p-4 gap-2">
-          <h1 className="text-lg font-bold mb-4">Inventory</h1>
+          <div className="flex items-center gap-2.5 mb-4 px-2">
+            <img
+              src="https://res.cloudinary.com/dmiwq3l2s/image/upload/v1764768203/vfw82jmca7zl5p86czhy.png"
+              alt="Logo"
+              className="w-8 h-8 rounded object-contain"
+            />
+            <span className="text-lg font-bold tracking-tight">Inventory</span>
+          </div>
 
           <DesktopNavItem to="/" icon={Home} label="Home" />
           <DesktopNavItem to="/auto-inventory" icon={Package} label="Fabrics" />
@@ -122,69 +104,39 @@ const AppNavigation: React.FC = () => {
           )}
 
           <div className="mt-auto">
-            <a
-              href="#"
-              onClick={(e) => {
-                e.preventDefault();
-                navigate("/profile");
-              }}
-              className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                isProfileActive
-                  ? "bg-slate-900 text-white dark:bg-neutral-200 dark:text-neutral-900 font-semibold"
-                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-neutral-900"
-              }`}
-            >
-              <img
-                src={avatar}
-                className="w-8 h-8 rounded-full object-cover"
-                alt="Profile"
-                loading="lazy"
-              />
-              <span className="text-sm">Profile</span>
-            </a>
+            <DesktopNavItem to="/profile" icon={User} label="Profile" />
           </div>
         </div>
       </aside>
 
-      {/* Mobile Bottom Nav */}
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 bg-white dark:bg-black border-t border-gray-200 dark:border-gray-800 pb-safe">
-        <div className={`grid ${isAdmin ? "grid-cols-5" : "grid-cols-4"} h-20`}>
-          <MobileNavItem to="/" icon={Home} label="Home" />
-          <MobileNavItem to="/auto-inventory" icon={Package} label="Fabrics" />
-          <MobileNavItem to="/notifications" icon={Bell} label="Alerts" />
-          {isAdmin && (
-            <MobileNavItem to="/stock" icon={TrendingUp} label="Stock" />
-          )}
+      {/* Floating Glossy Glass Pill Navbar (iPad & Mobile screens) */}
+      <nav
+        aria-label="Main Navigation"
+        className="xl:hidden fixed left-1/2 -translate-x-1/2 z-40 select-none pointer-events-auto"
+        style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)" }}
+      >
+        <div
+          className="relative flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-2 sm:py-2.5
+            rounded-full
+            bg-white/35 dark:bg-neutral-950/45
+            bg-gradient-to-b from-white/55 via-white/20 to-white/35
+            dark:from-white/15 dark:via-neutral-900/30 dark:to-neutral-950/60
+            backdrop-blur-3xl backdrop-saturate-[220%]
+            border border-white/80 dark:border-white/25
+            shadow-[0_24px_50px_-10px_rgba(0,0,0,0.22),0_8px_20px_rgba(0,0,0,0.08),inset_0_1.5px_2px_rgba(255,255,255,0.95),inset_0_-1.5px_2px_rgba(0,0,0,0.08),inset_0_0_20px_rgba(255,255,255,0.35)]
+            dark:shadow-[0_28px_60px_-10px_rgba(0,0,0,0.95),0_10px_25px_rgba(0,0,0,0.6),inset_0_1.5px_2px_rgba(255,255,255,0.4),inset_0_-1.5px_2px_rgba(0,0,0,0.4),inset_0_0_20px_rgba(255,255,255,0.05)]
+            overflow-hidden"
+        >
+          {/* Glossy top specular reflection highlight sheen */}
+          <div className="absolute inset-x-2 top-0 h-[48%] rounded-t-full bg-gradient-to-b from-white/75 via-white/25 to-transparent pointer-events-none dark:from-white/30 dark:via-white/5" />
 
-          {/* Profile */}
-          <a
-            href="#"
-            onClick={(e) => {
-              e.preventDefault();
-              navigate("/profile");
-            }}
-            className="flex flex-col items-center justify-center h-full w-full"
-          >
-            <img
-              src={avatar}
-              className={`w-6 h-6 rounded-full object-cover transition-all ${
-                isProfileActive
-                  ? "ring-2 ring-slate-800 dark:ring-neutral-200"
-                  : ""
-              }`}
-              alt="Profile"
-              loading="lazy"
-            />
-            <span
-              className={`text-xs mt-2 ${
-                isProfileActive
-                  ? "font-semibold text-gray-800 dark:text-gray-300"
-                  : "text-gray-500 dark:text-gray-500"
-              }`}
-            >
-              Profile
-            </span>
-          </a>
+          <FloatingPillNavItem to="/" icon={Home} label="Home" />
+          <FloatingPillNavItem to="/auto-inventory" icon={Package} label="Fabrics" />
+          <FloatingPillNavItem to="/notifications" icon={Bell} label="Alerts" />
+          {isAdmin && (
+            <FloatingPillNavItem to="/stock" icon={TrendingUp} label="Stock" />
+          )}
+          <FloatingPillNavItem to="/profile" icon={User} label="Profile" />
         </div>
       </nav>
     </>

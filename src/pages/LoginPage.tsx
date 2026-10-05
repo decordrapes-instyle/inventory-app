@@ -236,8 +236,8 @@ const NativeOnboarding: React.FC<{ onDone: () => void }> = ({ onDone }) => {
 
 /* ------------ Web login ------------ */
 const WebLogin: React.FC<{ onDone: () => void }> = ({ onDone }) => (
-  <div className="min-h-screen flex flex-col max-w-md mx-auto bg-white text-black dark:bg-neutral-950 dark:text-white">
-    <div className="px-6 pt-16 pb-6">
+  <div className="min-h-screen flex flex-col justify-center max-w-md mx-auto px-4 sm:px-6 py-12 bg-white text-black dark:bg-neutral-950 dark:text-white">
+    <div className="px-2 pt-4 pb-6">
       <img
         src="https://res.cloudinary.com/dmiwq3l2s/image/upload/v1764768203/vfw82jmca7zl5p86czhy.png"
         alt="Logo"
@@ -249,7 +249,7 @@ const WebLogin: React.FC<{ onDone: () => void }> = ({ onDone }) => (
       </p>
     </div>
     <AuthForm onDone={onDone} />
-    <div className="h-10" />
+    <div className="h-6" />
   </div>
 );
 

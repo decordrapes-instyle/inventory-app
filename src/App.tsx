@@ -57,7 +57,7 @@ const AppContent: React.FC = () => {
   useThemeColor(darkMode === "dark");
 
   return (
-    <div className="lg:pl-64 pb-20 lg:pb-0 flex flex-col min-h-screen bg-white dark:bg-black text-gray-900 dark:text-white">
+    <div className="xl:pl-64 pb-32 sm:pb-36 xl:pb-0 flex flex-col min-h-screen bg-white dark:bg-black text-gray-900 dark:text-white">
       <main className="flex-1 overflow-y-auto">
         <CurrentPage />
       </main>

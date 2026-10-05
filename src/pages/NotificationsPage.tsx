@@ -92,66 +92,68 @@ const Sheet: React.FC<{
         style={{ opacity: backdropOpacity * 0.6, transition: "opacity 150ms" }}
         onClick={onClose}
       />
-      <div
-        className="absolute bottom-0 left-0 right-0 bg-white dark:bg-neutral-950 rounded-t-[28px] overflow-hidden shadow-2xl"
-        style={{
-          maxHeight: "92vh",
-          transform: `translateY(${dragY}px)`,
-          transition: dragging.current
-            ? "none"
-            : "transform 300ms cubic-bezier(0.32, 0.72, 0, 1)",
-          touchAction: "none",
-        }}
-      >
+      <div className="absolute inset-x-0 bottom-0 flex justify-center pointer-events-none">
         <div
-          className="flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing"
-          style={{ touchAction: "none" }}
-          onTouchStart={(e) => begin(e.touches[0].clientY)}
-          onTouchMove={(e) => move(e.touches[0].clientY)}
-          onTouchEnd={(e) => end(e.changedTouches[0].clientY)}
-          onMouseDown={(e) => {
-            begin(e.clientY);
-            const mv = (ev: MouseEvent) => move(ev.clientY);
-            const up = (ev: MouseEvent) => {
-              end(ev.clientY);
-              document.removeEventListener("mousemove", mv);
-              document.removeEventListener("mouseup", up);
-            };
-            document.addEventListener("mousemove", mv);
-            document.addEventListener("mouseup", up);
+          className="w-full sm:max-w-xl pointer-events-auto bg-white dark:bg-neutral-950 rounded-t-[28px] overflow-hidden shadow-2xl"
+          style={{
+            maxHeight: "92vh",
+            transform: `translateY(${dragY}px)`,
+            transition: dragging.current
+              ? "none"
+              : "transform 300ms cubic-bezier(0.32, 0.72, 0, 1)",
+            touchAction: "none",
           }}
         >
-          <div className="w-10 h-1.5 bg-black/25 dark:bg-white/25 rounded-full" />
-        </div>
-
-        {(title || subtitle) && (
-          <div className="px-5 pb-3 flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              {title && (
-                <h2 className="text-lg font-bold text-neutral-900 dark:text-white truncate">
-                  {title}
-                </h2>
-              )}
-              {subtitle && (
-                <p className="text-sm text-neutral-500 dark:text-neutral-400 truncate">
-                  {subtitle}
-                </p>
-              )}
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 -mr-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
-            >
-              <X className="w-5 h-5 text-neutral-500" />
-            </button>
+          <div
+            className="flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing"
+            style={{ touchAction: "none" }}
+            onTouchStart={(e) => begin(e.touches[0].clientY)}
+            onTouchMove={(e) => move(e.touches[0].clientY)}
+            onTouchEnd={(e) => end(e.changedTouches[0].clientY)}
+            onMouseDown={(e) => {
+              begin(e.clientY);
+              const mv = (ev: MouseEvent) => move(ev.clientY);
+              const up = (ev: MouseEvent) => {
+                end(ev.clientY);
+                document.removeEventListener("mousemove", mv);
+                document.removeEventListener("mouseup", up);
+              };
+              document.addEventListener("mousemove", mv);
+              document.addEventListener("mouseup", up);
+            }}
+          >
+            <div className="w-10 h-1.5 bg-black/25 dark:bg-white/25 rounded-full" />
           </div>
-        )}
 
-        <div
-          className="overflow-y-auto overscroll-contain"
-          style={{ maxHeight: "calc(92vh - 80px)" }}
-        >
-          {children}
+          {(title || subtitle) && (
+            <div className="px-5 pb-3 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                {title && (
+                  <h2 className="text-lg font-bold text-neutral-900 dark:text-white truncate">
+                    {title}
+                  </h2>
+                )}
+                {subtitle && (
+                  <p className="text-sm text-neutral-500 dark:text-neutral-400 truncate">
+                    {subtitle}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={onClose}
+                className="p-2 -mr-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
+              >
+                <X className="w-5 h-5 text-neutral-500" />
+              </button>
+            </div>
+          )}
+
+          <div
+            className="overflow-y-auto overscroll-contain"
+            style={{ maxHeight: "calc(92vh - 80px)" }}
+          >
+            {children}
+          </div>
         </div>
       </div>
     </div>
@@ -598,7 +600,7 @@ const NotificationsPage: React.FC = () => {
           shadow-[0_1px_0_0_rgba(0,0,0,0.04),0_10px_28px_-14px_rgba(0,0,0,0.10)]
           dark:shadow-[0_1px_0_0_rgba(255,255,255,0.04),0_10px_28px_-14px_rgba(0,0,0,0.8)]"
       >
-        <div className="h-14 flex items-center px-3 gap-2">
+        <div className="h-14 flex items-center px-3 md:px-5 gap-2 max-w-3xl mx-auto">
           <button
             onClick={goBack}
             className="p-2 -ml-1 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
@@ -618,7 +620,7 @@ const NotificationsPage: React.FC = () => {
         </div>
       </header>
 
-      <div className="px-4 pt-3">
+      <div className="px-4 md:px-6 pt-3 max-w-3xl mx-auto">
         <div className="-mx-4 px-4 flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-hide">
           {(["today", "yesterday", "last7", "all"] as const).map((f) => {
             const label =

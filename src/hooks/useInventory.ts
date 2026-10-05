@@ -220,10 +220,13 @@ export const useInventoryData = (enableChunkedLoading = true) => {
       const txRef = push(
         ref(database, `quotations/inventoryTransactions/${product.id}`)
       );
+      const rate = product.rate ?? (product as any).cost ?? 0;
       await set(txRef, {
         productId: product.productId,
         productName: product.productName,
         quantityChange,
+        rate,
+        type: quantityChange >= 0 ? "add" : "remove",
         unit: product.unit,
         source: "manual",
         note,

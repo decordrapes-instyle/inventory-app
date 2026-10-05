@@ -48,12 +48,12 @@ const StockPage: React.FC = () => {
       {/* ============== SOFT HEADER ============== */}
       <header
         style={{ paddingTop: SAFE_TOP }}
-        className="fixed top-0 left-0 right-0 z-30
+        className="fixed top-0 left-0 right-0 xl:left-64 z-30
           bg-white/85 dark:bg-black/85 backdrop-blur-xl
           shadow-[0_1px_0_0_rgba(0,0,0,0.04),0_10px_28px_-14px_rgba(0,0,0,0.10)]
           dark:shadow-[0_1px_0_0_rgba(255,255,255,0.04),0_10px_28px_-14px_rgba(0,0,0,0.8)]"
       >
-        <div className="h-14 flex items-center px-3 gap-1.5">
+        <div className="h-14 flex items-center px-3 md:px-5 gap-1.5">
           <button
             onClick={goBack}
             className="p-2 -ml-1 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
@@ -74,7 +74,7 @@ const StockPage: React.FC = () => {
       <div style={{ height: `calc(56px + ${SAFE_TOP})` }} />
 
       {/* ============== CONTENT ============== */}
-      <div className="p-4 space-y-4">
+      <div className="p-4 md:p-6 space-y-4 max-w-4xl mx-auto">
         {loading ? (
           <LoadingSkeleton />
         ) : (
@@ -201,6 +201,11 @@ const StockPage: React.FC = () => {
                   <p className="text-[15px] font-bold tabular-nums text-emerald-600 dark:text-emerald-400 leading-tight">
                     {formatCurrency(analytics.todayAddedValue)}
                   </p>
+                  {analytics.todayAddedUnits > 0 && (
+                    <p className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80 tabular-nums mt-0.5 font-medium">
+                      +{formatNumber(analytics.todayAddedUnits)} units
+                    </p>
+                  )}
                 </div>
 
                 {/* Reduced */}
@@ -214,6 +219,11 @@ const StockPage: React.FC = () => {
                   <p className="text-[15px] font-bold tabular-nums text-rose-600 dark:text-rose-400 leading-tight">
                     {formatCurrency(analytics.todayReducedValue)}
                   </p>
+                  {analytics.todayReducedUnits > 0 && (
+                    <p className="text-[11px] text-rose-600/80 dark:text-rose-400/80 tabular-nums mt-0.5 font-medium">
+                      −{formatNumber(analytics.todayReducedUnits)} units
+                    </p>
+                  )}
                 </div>
 
                 {/* Net */}
@@ -244,6 +254,12 @@ const StockPage: React.FC = () => {
                     {netPositive ? "+" : "−"}
                     {formatCurrency(Math.abs(analytics.todayNetChange))}
                   </p>
+                  {(analytics.todayAddedUnits > 0 || analytics.todayReducedUnits > 0) && (
+                    <p className="text-[11px] text-neutral-500 dark:text-neutral-400 tabular-nums mt-0.5 font-medium">
+                      {analytics.todayNetUnits >= 0 ? "+" : "−"}
+                      {formatNumber(Math.abs(analytics.todayNetUnits))} units
+                    </p>
+                  )}
                 </div>
               </div>
             </div>

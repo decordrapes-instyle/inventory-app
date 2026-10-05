@@ -16,6 +16,7 @@ export interface StockProduct {
   timestamp: number;
   source: "inventory" | "manual";
   originalId: string;
+  productId?: string;
 }
 
 export interface InventoryTransaction {
@@ -24,6 +25,7 @@ export interface InventoryTransaction {
   productName: string;
   type: "add" | "remove" | "adjust" | "update";
   quantity: number;
+  quantityChange?: number;
   previousQuantity?: number;
   rate?: number;
   previousRate?: number;
@@ -40,6 +42,9 @@ interface AnalyticsData {
   todayAddedValue: number;
   todayReducedValue: number;
   todayNetChange: number;
+  todayAddedUnits: number;
+  todayReducedUnits: number;
+  todayNetUnits: number;
   inventoryCount: number;
   manualCount: number;
   inventoryValue: number;
@@ -67,7 +72,7 @@ export function useStockData() {
     return { startOfDay, endOfDay: startOfDay + 86400000 };
   }, []);
 
-  // Transactions — read from the CORRECT path (plural).
+  // Transactions — read from quotations/inventoryTransactions
   useEffect(() => {
     const txRef = ref(database, "quotations/inventoryTransactions");
     const unsub = onValue(txRef, (snap) => {
@@ -81,14 +86,23 @@ export function useStockData() {
         const pid = productNode.key!;
         productNode.forEach((txNode) => {
           const t: any = txNode.val();
+          const rawQtyChange =
+            typeof t.quantityChange === "number"
+              ? t.quantityChange
+              : typeof t.quantity === "number"
+              ? t.quantity
+              : 0;
+          const determinedType =
+            t.type || (rawQtyChange > 0 ? "add" : rawQtyChange < 0 ? "remove" : "update");
           list.push({
             id: `${pid}_${txNode.key}`,
-            productId: pid,
+            productId: t.productId || pid,
             productName: t.productName || "Unknown Product",
-            type: t.type || "update",
-            quantity: t.quantity ?? t.quantityChange ?? 0,
+            type: determinedType,
+            quantity: Math.abs(rawQtyChange),
+            quantityChange: rawQtyChange,
             previousQuantity: t.previousQuantity,
-            rate: t.rate,
+            rate: typeof t.rate === "number" ? t.rate : undefined,
             previousRate: t.previousRate,
             timestamp: t.timestamp || t.createdAt || Date.now(),
             createdAt: t.createdAt || t.timestamp || Date.now(),
@@ -114,8 +128,13 @@ export function useStockData() {
     const commit = () => {
       if (!(a && b && c)) return;
       const inv = invList.map((p) => {
-        const info = productsMap[p.originalId] || {};
-        return { ...p, rate: info.rate || info.cost || 0, cost: info.cost || info.rate || 0 };
+        const info =
+          productsMap[p.originalId] ||
+          (p.productId ? productsMap[p.productId] : null) ||
+          {};
+        const rate = p.rate || info.rate || info.cost || 0;
+        const cost = p.cost || info.cost || info.rate || 0;
+        return { ...p, rate, cost };
       });
       const combined = [...inv, ...manualList].sort((x, y) => y.timestamp - x.timestamp);
       setStockData(combined);
@@ -128,16 +147,18 @@ export function useStockData() {
       if (snap.exists()) {
         snap.forEach((child) => {
           const v: any = child.val();
+          const r = v.rate ?? v.cost ?? 0;
           invList.push({
             id: `inventory_${child.key}`,
             name: v.productName || v.name || "Unnamed",
-            stock: v.stock || 0,
-            rate: 0,
-            cost: 0,
+            stock: typeof v.stock === "number" ? v.stock : 0,
+            rate: r,
+            cost: v.cost ?? v.rate ?? r,
             imageUrl: v.imageUrl,
             timestamp: v.timestamp || v.modifiedAt || v.createdAt || Date.now(),
             source: "inventory",
             originalId: child.key!,
+            productId: v.productId || child.key!,
           });
         });
       }
@@ -150,16 +171,18 @@ export function useStockData() {
       if (snap.exists()) {
         snap.forEach((child) => {
           const v: any = child.val();
+          const r = v.rate ?? v.cost ?? 0;
           manualList.push({
             id: `manual_${child.key}`,
             name: v.productName || v.name || "Unnamed",
-            stock: v.stock || 0,
-            rate: v.rate || 0,
-            cost: v.cost || v.rate || 0,
+            stock: typeof v.stock === "number" ? v.stock : 0,
+            rate: r,
+            cost: v.cost ?? v.rate ?? r,
             imageUrl: v.imageUrl,
             timestamp: v.timestamp || v.modifiedAt || v.createdAt || Date.now(),
             source: "manual",
             originalId: child.key!,
+            productId: v.productId || child.key!,
           });
         });
       }
@@ -168,7 +191,19 @@ export function useStockData() {
     });
 
     const u3 = onValue(ref(database, "quotations/products"), (snap) => {
-      productsMap = snap.exists() ? snap.val() : {};
+      const map: Record<string, any> = {};
+      if (snap.exists()) {
+        snap.forEach((child) => {
+          const v = child.val() || {};
+          const r = v.rate ?? v.cost ?? 0;
+          const entry = { ...v, rate: r, cost: r };
+          map[child.key!] = entry;
+          if (v.productId) map[v.productId] = entry;
+          if (v.name) map[v.name.toLowerCase().trim()] = entry;
+          if (v.productName) map[v.productName.toLowerCase().trim()] = entry;
+        });
+      }
+      productsMap = map;
       c = true;
       commit();
     });
@@ -190,15 +225,55 @@ export function useStockData() {
     const inventoryCount = stockData.filter((p) => p.source === "inventory").length;
     const manualCount = stockData.filter((p) => p.source === "manual").length;
 
+    // Build price lookup map from stockData and productsMap
+    const priceLookup = new Map<string, number>();
+    for (const p of stockData) {
+      if (p.rate && p.rate > 0) {
+        if (p.id) priceLookup.set(p.id, p.rate);
+        if (p.originalId) priceLookup.set(p.originalId, p.rate);
+        if (p.productId) priceLookup.set(p.productId, p.rate);
+        if (p.name) priceLookup.set(p.name.toLowerCase().trim(), p.rate);
+      }
+    }
+
     const { startOfDay, endOfDay } = getTodayRange();
     let todayAddedValue = 0;
     let todayReducedValue = 0;
+    let todayAddedUnits = 0;
+    let todayReducedUnits = 0;
 
     for (const t of allTransactions) {
-      if (t.timestamp < startOfDay || t.timestamp > endOfDay) continue;
-      const v = Math.abs(t.quantity) * (t.rate || 0);
-      if (t.type === "add" || (t.type === "adjust" && t.quantity > 0)) todayAddedValue += v;
-      else if (t.type === "remove" || (t.type === "adjust" && t.quantity < 0)) todayReducedValue += v;
+      const ts = t.timestamp || t.createdAt || 0;
+      if (ts < startOfDay || ts > endOfDay) continue;
+
+      const rate =
+        typeof t.rate === "number" && t.rate > 0
+          ? t.rate
+          : priceLookup.get(t.productId) ??
+            priceLookup.get(t.productName?.toLowerCase()?.trim()) ??
+            0;
+
+      const qty = Math.abs(t.quantityChange ?? t.quantity ?? 0);
+      const v = qty * rate;
+
+      const isAdd =
+        t.type === "add" ||
+        (t.quantityChange !== undefined
+          ? t.quantityChange > 0
+          : t.type === "adjust" && t.quantity > 0);
+      const isRemove =
+        t.type === "remove" ||
+        (t.quantityChange !== undefined
+          ? t.quantityChange < 0
+          : t.type === "adjust" && t.quantity < 0);
+
+      if (isAdd) {
+        todayAddedValue += v;
+        todayAddedUnits += qty;
+      } else if (isRemove) {
+        todayReducedValue += v;
+        todayReducedUnits += qty;
+      }
     }
 
     return {
@@ -208,6 +283,9 @@ export function useStockData() {
       todayAddedValue,
       todayReducedValue,
       todayNetChange: todayAddedValue - todayReducedValue,
+      todayAddedUnits,
+      todayReducedUnits,
+      todayNetUnits: todayAddedUnits - todayReducedUnits,
       inventoryCount,
       manualCount,
       inventoryValue,

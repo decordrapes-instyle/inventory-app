@@ -138,12 +138,12 @@ const EditProfilePage: React.FC = () => {
       {/* ============== SOFT HEADER ============== */}
       <header
         style={{ paddingTop: SAFE_TOP }}
-        className="fixed top-0 left-0 right-0 z-30
+        className="fixed top-0 left-0 right-0 xl:left-64 z-30
           bg-white/85 dark:bg-black/85 backdrop-blur-xl
           shadow-[0_1px_0_0_rgba(0,0,0,0.04),0_10px_28px_-14px_rgba(0,0,0,0.10)]
           dark:shadow-[0_1px_0_0_rgba(255,255,255,0.04),0_10px_28px_-14px_rgba(0,0,0,0.8)]"
       >
-        <div className="h-14 flex items-center px-3 gap-1.5">
+        <div className="h-14 flex items-center px-3 md:px-5 gap-1.5">
           <button
             onClick={goBack}
             className="p-2 -ml-1 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
@@ -177,7 +177,7 @@ const EditProfilePage: React.FC = () => {
 
       <div style={{ height: `calc(56px + ${SAFE_TOP})` }} />
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} className="max-w-xl mx-auto w-full">
         {/* ============== AVATAR — plain, no card ============== */}
         <div className="px-6 pt-8 pb-6 flex flex-col items-center">
           <div className="relative">

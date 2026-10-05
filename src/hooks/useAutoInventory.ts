@@ -187,10 +187,13 @@ export function useAutoInventory(enableChunkedLoading = true) {
       const txRef = push(
         ref(database, `quotations/inventoryTransactions/${product.id}`)
       );
+      const rate = (product as any).cost ?? (product as any).rate ?? 0;
       await set(txRef, {
         productId: product.productId,
         productName: product.productName,
         quantityChange,
+        rate,
+        type: quantityChange >= 0 ? "add" : "remove",
         unit: product.unit,
         source: "manual",
         note,

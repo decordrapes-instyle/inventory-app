@@ -105,61 +105,94 @@ const ProductsPage: React.FC = () => {
       {/* ============== SOFT HEADER ============== */}
       <header
         style={{ paddingTop: SAFE_TOP }}
-        className="fixed top-0 left-0 right-0 z-30
+        className="fixed top-0 left-0 right-0 xl:left-64 z-30
           bg-white/85 dark:bg-black/85 backdrop-blur-xl
           shadow-[0_1px_0_0_rgba(0,0,0,0.04),0_10px_28px_-14px_rgba(0,0,0,0.10)]
           dark:shadow-[0_1px_0_0_rgba(255,255,255,0.04),0_10px_28px_-14px_rgba(0,0,0,0.8)]"
       >
-        <div className="h-14 flex items-center px-3 gap-1.5">
-          {showSearch ? (
-            <>
-              <button
-                onClick={() => { setShowSearch(false); setSearchTerm(""); }}
-                className="p-2 -ml-1 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
-                aria-label="Close search"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  autoFocus
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search by name or code…"
-                  className="w-full h-10 pl-9 pr-9 rounded-full bg-gray-100 dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 border-0"
-                />
-                {searchTerm && (
-                  <button
-                    onClick={() => setSearchTerm("")}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full"
-                  >
-                    <X className="w-3.5 h-3.5 text-gray-500" />
-                  </button>
-                )}
-              </div>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={goBack}
-                className="p-2 -ml-1 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
-                aria-label="Back"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-              <h1 className="text-base font-bold truncate flex-1 ml-1">
-                Products
-              </h1>
-              <button
-                onClick={() => setShowSearch(true)}
-                className="p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
-                aria-label="Search"
-              >
-                <Search className="w-5 h-5" />
-              </button>
-            </>
-          )}
+        <div className="h-14 flex items-center px-3 md:px-5 gap-2">
+          {/* Mobile search (< md) */}
+          <div className="flex md:hidden items-center flex-1 gap-1.5 min-w-0">
+            {showSearch ? (
+              <>
+                <button
+                  onClick={() => { setShowSearch(false); setSearchTerm(""); }}
+                  className="p-2 -ml-1 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                  aria-label="Close search"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+                <div className="flex-1 relative min-w-0">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    autoFocus
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Search by name or code…"
+                    className="w-full h-10 pl-9 pr-9 rounded-full bg-gray-100 dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 border-0"
+                  />
+                  {searchTerm && (
+                    <button
+                      onClick={() => setSearchTerm("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-gray-500"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={goBack}
+                  className="p-2 -ml-1 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                  aria-label="Back"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+                <h1 className="text-base font-bold truncate flex-1 ml-1">
+                  Products
+                </h1>
+                <button
+                  onClick={() => setShowSearch(true)}
+                  className="p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                  aria-label="Search"
+                >
+                  <Search className="w-5 h-5" />
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Tablet & Desktop Header (>= md, e.g. iPad) */}
+          <div className="hidden md:flex items-center flex-1 gap-4 min-w-0">
+            <button
+              onClick={goBack}
+              className="p-2 -ml-1 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-900"
+              aria-label="Back"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <h1 className="text-lg font-bold shrink-0">Products</h1>
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search products…"
+                className="w-full h-10 pl-10 pr-9 rounded-full bg-gray-100 dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 border-0"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                  aria-label="Clear"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </header>
 
@@ -168,29 +201,29 @@ const ProductsPage: React.FC = () => {
 
       {/* ============== SUMMARY STRIP ============== */}
       {!loading && products.length > 0 && (
-        <div className="px-4 pt-4">
-          <div className="grid grid-cols-3 gap-2">
-            <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-3">
+        <div className="px-4 md:px-6 pt-4 max-w-4xl mx-auto">
+          <div className="grid grid-cols-3 gap-2 md:gap-4">
+            <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-3 md:p-4">
               <p className="text-[10px] uppercase tracking-wider text-neutral-500 dark:text-neutral-400 font-semibold">
                 Total
               </p>
-              <p className="text-xl font-bold tabular-nums mt-0.5">
+              <p className="text-xl md:text-2xl font-bold tabular-nums mt-0.5">
                 {counts.total}
               </p>
             </div>
-            <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-3">
+            <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-3 md:p-4">
               <p className="text-[10px] uppercase tracking-wider text-orange-600 dark:text-orange-400 font-semibold">
                 Low
               </p>
-              <p className="text-xl font-bold text-orange-600 dark:text-orange-400 tabular-nums mt-0.5">
+              <p className="text-xl md:text-2xl font-bold text-orange-600 dark:text-orange-400 tabular-nums mt-0.5">
                 {counts.low}
               </p>
             </div>
-            <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-3">
+            <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-3 md:p-4">
               <p className="text-[10px] uppercase tracking-wider text-red-600 dark:text-red-400 font-semibold">
                 Out
               </p>
-              <p className="text-xl font-bold text-red-600 dark:text-red-400 tabular-nums mt-0.5">
+              <p className="text-xl md:text-2xl font-bold text-red-600 dark:text-red-400 tabular-nums mt-0.5">
                 {counts.out}
               </p>
             </div>
@@ -199,7 +232,7 @@ const ProductsPage: React.FC = () => {
       )}
 
       {/* ============== LIST ============== */}
-      <div className="p-4 space-y-3">
+      <div className="p-4 md:p-6 space-y-3 max-w-4xl mx-auto">
         {loading ? (
           <>
             <ProductSkeleton />
