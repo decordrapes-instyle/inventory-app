@@ -17,8 +17,8 @@
   }
 
   html {
-    scroll-behavior: smooth;
     -webkit-text-size-adjust: 100%;
+    -webkit-overflow-scrolling: touch;
   }
 
   button, a, input, select, textarea {

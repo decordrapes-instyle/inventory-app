@@ -11,7 +11,7 @@ type NavItemProps = {
 };
 
 /* -------------------- Mobile Nav Item -------------------- */
-/* -------------------- Floating Glossy Glass Pill Item -------------------- */
+/* -------------------- Floating Glass Pill Item -------------------- */
 const FloatingPillNavItem = memo(({ to, icon: Icon, label }: NavItemProps) => {
   const { navigate, currentPath } = useNavigation();
   const isActive = currentPath === to;
@@ -23,18 +23,18 @@ const FloatingPillNavItem = memo(({ to, icon: Icon, label }: NavItemProps) => {
         navigate(to);
       }}
       className={`group relative flex items-center justify-center gap-1.5 sm:gap-2
-        px-3.5 sm:px-4.5 py-2.5 sm:py-3 rounded-full text-xs font-semibold
-        transition-all duration-200 active:scale-95
+        px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-full text-xs font-semibold
+        transition-transform duration-150 active:scale-95
         ${
           isActive
-            ? "bg-neutral-950/90 text-white dark:bg-white/95 dark:text-neutral-950 shadow-[0_4px_14px_rgba(0,0,0,0.25),inset_0_1px_1px_rgba(255,255,255,0.4)]"
-            : "text-neutral-800 dark:text-neutral-200 hover:text-black dark:hover:text-white hover:bg-white/40 dark:hover:bg-white/10"
+            ? "bg-neutral-950/90 text-white dark:bg-white/95 dark:text-neutral-950 shadow-[0_2px_8px_rgba(0,0,0,0.18)]"
+            : "text-neutral-800 dark:text-neutral-200 hover:text-black dark:hover:text-white hover:bg-white/25 dark:hover:bg-white/10"
         }`}
       aria-label={label}
       aria-current={isActive ? "page" : undefined}
     >
       <Icon
-        className={`w-[18px] h-[18px] sm:w-5 sm:h-5 transition-transform duration-200 ${
+        className={`w-[18px] h-[18px] sm:w-5 sm:h-5 transition-transform duration-150 ${
           isActive ? "scale-105" : "group-hover:scale-105"
         }`}
       />
@@ -62,9 +62,9 @@ const DesktopNavItem = memo(({ to, icon: Icon, label }: NavItemProps) => {
         e.preventDefault();
         navigate(to);
       }}
-      className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+      className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-150 ${
         isActive
-          ? "bg-slate-900 text-white dark:bg-neutral-200 dark:text-neutral-900 font-semibold"
+          ? "bg-slate-900 text-white dark:bg-neutral-200 dark:text-neutral-900 font-semibold shadow-sm"
           : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-neutral-900"
       }`}
     >
@@ -109,27 +109,30 @@ const AppNavigation: React.FC = () => {
         </div>
       </aside>
 
-      {/* Floating Glossy Glass Pill Navbar (iPad & Mobile screens) */}
+      {/* Floating Real Apple Glass Pill Navbar (iPad & Mobile screens) */}
       <nav
         aria-label="Main Navigation"
-        className="xl:hidden fixed left-1/2 -translate-x-1/2 z-40 select-none pointer-events-auto"
-        style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)" }}
+        className="xl:hidden fixed left-1/2 z-40 select-none pointer-events-auto"
+        style={{
+          bottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)",
+          transform: "translate3d(-50%, 0, 0)",
+          WebkitTransform: "translate3d(-50%, 0, 0)",
+          willChange: "transform",
+        }}
       >
         <div
-          className="relative flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-2 sm:py-2.5
+          className="relative flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2
             rounded-full
-            bg-white/35 dark:bg-neutral-950/45
-            bg-gradient-to-b from-white/55 via-white/20 to-white/35
-            dark:from-white/15 dark:via-neutral-900/30 dark:to-neutral-950/60
-            backdrop-blur-3xl backdrop-saturate-[220%]
-            border border-white/80 dark:border-white/25
-            shadow-[0_24px_50px_-10px_rgba(0,0,0,0.22),0_8px_20px_rgba(0,0,0,0.08),inset_0_1.5px_2px_rgba(255,255,255,0.95),inset_0_-1.5px_2px_rgba(0,0,0,0.08),inset_0_0_20px_rgba(255,255,255,0.35)]
-            dark:shadow-[0_28px_60px_-10px_rgba(0,0,0,0.95),0_10px_25px_rgba(0,0,0,0.6),inset_0_1.5px_2px_rgba(255,255,255,0.4),inset_0_-1.5px_2px_rgba(0,0,0,0.4),inset_0_0_20px_rgba(255,255,255,0.05)]
-            overflow-hidden"
+            bg-white/[0.18] dark:bg-black/[0.4]
+            backdrop-blur-xl
+            border border-white/40 dark:border-white/15
+            shadow-[0_12px_36px_rgba(0,0,0,0.12),inset_0_1px_0_0_rgba(255,255,255,0.6)]
+            dark:shadow-[0_16px_40px_rgba(0,0,0,0.6),inset_0_1px_0_0_rgba(255,255,255,0.15)]"
+          style={{
+            WebkitBackdropFilter: "blur(20px) saturate(180%)",
+            backdropFilter: "blur(20px) saturate(180%)",
+          }}
         >
-          {/* Glossy top specular reflection highlight sheen */}
-          <div className="absolute inset-x-2 top-0 h-[48%] rounded-t-full bg-gradient-to-b from-white/75 via-white/25 to-transparent pointer-events-none dark:from-white/30 dark:via-white/5" />
-
           <FloatingPillNavItem to="/" icon={Home} label="Home" />
           <FloatingPillNavItem to="/auto-inventory" icon={Package} label="Fabrics" />
           <FloatingPillNavItem to="/notifications" icon={Bell} label="Alerts" />
